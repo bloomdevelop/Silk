@@ -4,5 +4,5 @@ interface Command {
     execute: callback,
     use?: string,
     cooldown?: number,
-    arguments?: boolean,
+    args?: boolean,
 }

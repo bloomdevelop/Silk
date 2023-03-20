@@ -1,9 +1,9 @@
 import { Message } from "revolt.js";
 
-export = {
+const ban: Command = {
     name: "ban",
     description: "Ban users from your server",
-    arguments: true,
+    args: true,
     use: "<userid>",
     execute(message: Message, args: string[]) {
         args.forEach(arg => {
@@ -15,3 +15,5 @@ export = {
         message.reply(`Banned ${args.length} user${args.length > 1 ? "s" : ""}`)
     },
 };
+
+export = ban

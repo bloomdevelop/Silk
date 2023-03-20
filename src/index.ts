@@ -1,4 +1,4 @@
-import { Client, Message } from "revolt.js";
+import { Client, Message, User } from "revolt.js";
 
 import dotenv from "dotenv";
 import fs from "node:fs";
@@ -16,6 +16,8 @@ const categories = fs.readdirSync("./dist/commands");
 
 const commands: Map<string, Command> = new Map();
 
+export const userCache: Map<string, User> = new Map();
+
 // Get commands declared in files
 
 for (const folder of categories) {
@@ -24,12 +26,12 @@ for (const folder of categories) {
         .filter((file) => file.endsWith(".js"));
 
     for (const file of files) {
-        console.log(file);
         const command: Command = require(
             path.resolve(`./dist/commands/${folder}/${file}`)
         );
 
         commands.set(command.name, command);
+        console.log("Loaded", command.name);
     }
 }
 
@@ -38,6 +40,10 @@ revolt.on("ready", () => {
 });
 
 revolt.on("message", async (message: Message) => {
+
+    // Cache user objects
+    if (message.author) userCache.set(message.author.username, message.author);
+
     if (
         !message.content?.startsWith(config.prefix) ||
         message.author?.bot
@@ -57,7 +63,10 @@ revolt.on("message", async (message: Message) => {
     try {
         // Pass the arguments into that command
         const cmd = commands.get(command);
-        console.log(cmd);
+
+        if (!cmd) return message.reply(`StationBot: ${command}: Command not found`);
+
+        console.log("executing", `${cmd.name}...`);
         cmd?.execute(message, args, commands, revolt);
     } catch (error) {
         // If command fails, notify the user

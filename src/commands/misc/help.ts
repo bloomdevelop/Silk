@@ -1,11 +1,11 @@
 import { Message } from "revolt.js";
 
-export = {
+const help: Command = {
     name: "help",
     description: "Help about a command",
-    arguments: true,
+    args: true,
     use: "<command>",
-    execute(
+    async execute(
         message: Message,
         args: string[],
         commands: Map<string, Command>
@@ -60,7 +60,9 @@ export = {
             data.push(`**Cooldown:** ${command.cooldown} second(s)`);
 
         for (const info of data) {
-            message.channel?.sendMessage(info);
+            await message.channel?.sendMessage(info);
         }
     },
 };
+
+export = help

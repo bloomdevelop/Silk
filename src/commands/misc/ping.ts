@@ -1,10 +1,12 @@
 import { Message } from "revolt.js";
 
-export = {
+const ping: Command = {
     name: "ping",
     description: "Bot's Ping",
-    arguments: false,
+    args: false,
     execute(message: Message) {
         message.channel?.sendMessage(`Current Ping: ${Date.now() - message.createdAt}ms`)
     }
 }
+
+export = ping
