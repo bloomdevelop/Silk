@@ -1,5 +1,7 @@
-# revoltjs-template
-Simple Revolt.JS Template
+# StationBot (Revolt)
+
+The [stationbot](https://github.com/stationarystation/stationbot) port to Revolt.JS that nobody asked for
+
 ## Steps
 
 ### Cloning the repo
