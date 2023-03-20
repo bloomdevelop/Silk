@@ -1,0 +1,34 @@
+{
+  "name": "revoltjs-template",
+  "version": "1.0.0",
+  "description": "Sample Revolt.JS Template",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "rimraf dist && tsc",
+    "start": "node ."
+  },
+  "keywords": [
+    "revolt.chat",
+    "revolt.js",
+    "revoltjs",
+    "typescript",
+    "template"
+  ],
+  "author": "StationaryStation",
+  "license": "GPLv3",
+  "dependencies": {
+    "dotenv": "^16.0.3",
+    "revolt.js": "^6.0.20"
+  },
+  "devDependencies": {
+    "@types/node": "^18.15.3",
+    "prettier": "^2.8.4",
+    "rimraf": "^4.4.0",
+    "typescript": "^4.9.5"
+  },
+  "bugs": {
+    "email": "raulytstation@outlook.com",
+    "url": "https://github.com/stationarystation/typescript-template/issues/new"
+  },
+  "homepage": "https://github.com/stationarystation/typescript-template"
+}
