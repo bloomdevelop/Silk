@@ -14,11 +14,14 @@ dotenv.config();
 
 const revolt = new Client();
 
-const categories = fs.readdirSync("./dist/commands");
+const disabledCommands = process.env.DISABLED_PLUGINS?.split(",") || "";
+
+console.log("disabledCommands:", disabledCommands);
 
 const commands: Map<string, Command> = new Map();
-
 export const userCache: Map<string, User> = new Map();
+
+const categories = fs.readdirSync("./dist/commands");
 
 // Get commands declared in files
 
@@ -31,9 +34,12 @@ for (const folder of categories) {
         const command: Command = require(path.resolve(
             `./dist/commands/${folder}/${file}`
         ));
-
-        commands.set(command.name, command);
-        console.log("Loaded", command.name);
+        if (!disabledCommands?.includes(command.name)) {
+            commands.set(command.name, command);
+            console.log("Loaded", command.name);
+        } else {
+            console.log("Not loading", file, "because it's disabled")
+        }
     }
 }
 
@@ -47,13 +53,13 @@ revolt.on("message", async (message: Message) => {
         userCache.set(message.author.username, message.author);
 
     if (
-        !message.content?.startsWith(process.env.prefix as string) ||
+        !message.content?.startsWith(process.env.PREFIX as string) ||
         message.author?.bot
     )
         return;
 
     const args: string[] = message.content
-        .slice((process.env.prefix as string).length)
+        .slice((process.env.PREFIX as string).length)
         .trim()
         .split(/ +/);
 
