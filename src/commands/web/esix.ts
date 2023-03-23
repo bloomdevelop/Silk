@@ -7,12 +7,18 @@ const esix: Command = {
     args: true,
     use: "<tags>",
     async execute(message: Message, args: string[]) {
-        const post = await esixAPI.posts.search({
-            limit: 100,
-            tags: `rating:safe ${args.join(" ")}`,
-        }).then(posts => posts[Math.floor(Math.random() *  (Math.floor(100) - Math.ceil(0) + 1)) + Math.ceil(0)]);
-
-        await message.reply(`[Result from E621](${post.file.url})`);
+        try {
+            const post = await esixAPI.posts.search({
+                limit: 100,
+                tags: `rating:safe ${args.join(" ")}`,
+            }).then(posts => posts[Math.floor(Math.random() *  (Math.floor(100) - Math.ceil(0) + 1)) + Math.ceil(0)]).catch(e => {
+                throw e;
+            })
+    
+            return await message.reply(`[Result from E621](${post.file.url})`);
+        } catch (error) {
+            return await message.reply(`Error trying to find "rating:safe ${args.join(" ")}"\n\`\`\`\n${error}\n\`\`\``);
+        }
     },
 };
 
