@@ -14,10 +14,6 @@ dotenv.config();
 
 const revolt = new Client();
 
-const config = {
-    prefix: "!",
-};
-
 const categories = fs.readdirSync("./dist/commands");
 
 const commands: Map<string, Command> = new Map();
@@ -32,32 +28,32 @@ for (const folder of categories) {
         .filter((file) => file.endsWith(".js"));
 
     for (const file of files) {
-        const command: Command = require(
-            path.resolve(`./dist/commands/${folder}/${file}`)
-        );
+        const command: Command = require(path.resolve(
+            `./dist/commands/${folder}/${file}`
+        ));
 
         commands.set(command.name, command);
         console.log("Loaded", command.name);
     }
 }
 
-revolt.on("ready", () => {
+revolt.once("ready", () => {
     console.log("I am ready!");
 });
 
 revolt.on("message", async (message: Message) => {
-
     // Cache user objects
-    if (message.author) userCache.set(message.author.username, message.author);
+    if (message.author)
+        userCache.set(message.author.username, message.author);
 
     if (
-        !message.content?.startsWith(config.prefix) ||
+        !message.content?.startsWith(process.env.prefix as string) ||
         message.author?.bot
     )
         return;
 
     const args: string[] = message.content
-        .slice(config.prefix.length)
+        .slice((process.env.prefix as string).length)
         .trim()
         .split(/ +/);
 
@@ -70,7 +66,10 @@ revolt.on("message", async (message: Message) => {
         // Pass the arguments into that command
         const cmd = commands.get(command);
 
-        if (!cmd) return message.reply(`StationBot: ${command}: Command not found`);
+        if (!cmd)
+            return message.reply(
+                `StationBot: ${command}: Command not found`
+            );
 
         console.log("executing", `${cmd.name}...`);
         cmd?.execute(message, args, commands, revolt);
