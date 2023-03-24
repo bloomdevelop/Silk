@@ -12,7 +12,7 @@ const about: Command = {
             embeds: [
                 {
                     title: "StationBot",
-                    description: `Version: ${packageInfo.version}\nCommands Enabled: \`${Array.from(commands.keys()).join(", ")}\`\nServers Joined: \`${client.servers.values.length}\`\nUptime: ${Math.floor(process.uptime())}s`
+                    description: `Version: ${packageInfo.version}\nCommands Enabled: \`${Array.from(commands.keys()).join(", ")}\`\nServers Joined: \`${Array.from(client.servers.values()).length}\`\nUptime: <t:${Math.floor(startup.getTime()/1000)}:R>`
                 }
             ]
         })

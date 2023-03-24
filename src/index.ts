@@ -26,7 +26,7 @@ export const userCache: Map<string, User> = new Map();
 const categories = fs.readdirSync("./dist/commands");
 
 // Uptime
-export let startup: number;
+export let startup: Date;
 
 // Get commands declared in files
 
@@ -52,7 +52,7 @@ revolt.once("ready", () => {
     console.log("I am ready!");
 
     // Log Startup Unix Timestamp
-    startup = Date.now();
+    startup = new Date;
 });
 
 revolt.on("message", async (message: Message) => {
