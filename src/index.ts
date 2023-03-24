@@ -19,10 +19,14 @@ const disabledCommands = process.env.DISABLED_PLUGINS?.split(",") || "";
 
 console.log("disabledCommands:", disabledCommands);
 
+export const packageInfo = require("../package.json");
 export const commands: Map<string, Command> = new Map();
 export const userCache: Map<string, User> = new Map();
 
 const categories = fs.readdirSync("./dist/commands");
+
+// Uptime
+export let startup: number;
 
 // Get commands declared in files
 
@@ -46,6 +50,9 @@ for (const folder of categories) {
 
 revolt.once("ready", () => {
     console.log("I am ready!");
+
+    // Log Startup Unix Timestamp
+    startup = Date.now();
 });
 
 revolt.on("message", async (message: Message) => {
