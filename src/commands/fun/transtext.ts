@@ -1,7 +1,7 @@
 import { Message } from "revolt.js";
 import { Command } from "../../types";
 
-const say: Command = {
+const transtext: Command = {
     name: "transtext",
     description: "Make the bot say something using the transexual flag's colourscheme",
     args: true,
@@ -15,4 +15,4 @@ const say: Command = {
     },
 };
 
-export = say;
+export = transtext;
