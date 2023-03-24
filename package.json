@@ -1,6 +1,6 @@
 {
   "name": "revoltjs-template",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Sample Revolt.JS Template",
   "main": "dist/index.js",
   "scripts": {
