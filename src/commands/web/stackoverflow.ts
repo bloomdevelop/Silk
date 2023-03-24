@@ -1,6 +1,7 @@
 import axios from "axios";
 import dayjs from "dayjs";
 import { Message } from "revolt.js";
+import { Command } from "../../types";
 
 interface StackoverflowPost {
     tags: string[];

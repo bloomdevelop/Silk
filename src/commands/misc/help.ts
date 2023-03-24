@@ -1,4 +1,6 @@
 import { Message } from "revolt.js";
+import { Command } from "../../types";
+import { commands } from "../..";
 
 const help: Command = {
     name: "help",
@@ -7,8 +9,7 @@ const help: Command = {
     use: "<command>",
     async execute(
         message: Message,
-        args: string[],
-        commands: Map<string, Command>
+        args: string[]
     ) {
         const data: string[] = [];
         if (!args.length) {

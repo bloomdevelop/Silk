@@ -1,4 +1,5 @@
 import { Client, Message, User } from "revolt.js";
+import { Command } from "./types";
 
 import dotenv from "dotenv";
 import fs from "node:fs";
@@ -18,7 +19,7 @@ const disabledCommands = process.env.DISABLED_PLUGINS?.split(",") || "";
 
 console.log("disabledCommands:", disabledCommands);
 
-const commands: Map<string, Command> = new Map();
+export const commands: Map<string, Command> = new Map();
 export const userCache: Map<string, User> = new Map();
 
 const categories = fs.readdirSync("./dist/commands");
@@ -78,7 +79,7 @@ revolt.on("message", async (message: Message) => {
             );
 
         console.log("executing", `${cmd.name}...`);
-        cmd?.execute(message, args, commands, revolt);
+        cmd?.execute(message, args, revolt);
     } catch (error) {
         // If command fails, notify the user
         message.reply(`I had an error while executting ${command}`);

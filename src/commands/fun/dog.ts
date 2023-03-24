@@ -1,5 +1,6 @@
 import axios from "axios";
 import { Message } from "revolt.js";
+import { Command } from "../../types";
 
 const dog: Command = {
     name: "dog",

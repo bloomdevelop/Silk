@@ -1,5 +1,6 @@
 import { Message } from "revolt.js";
 import { userCache } from "../..";
+import { Command } from "../../types";
 
 const ban: Command = {
     name: "ban",

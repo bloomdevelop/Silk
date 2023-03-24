@@ -1,5 +1,6 @@
 import { Message } from "revolt.js";
 import { esixAPI } from "../..";
+import { Command } from "../../types";
 
 const esix: Command = {
     name: "esix",

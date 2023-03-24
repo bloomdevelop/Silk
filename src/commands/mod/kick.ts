@@ -1,11 +1,12 @@
 import { Message } from "revolt.js";
+import { Command } from "../../types";
 
 const kick: Command = {
     name: "kick",
     description: "Kick users from your server",
     args: true,
     use: "<userid>",
-    execute(message: Message, args: string[]) {
+    async execute(message: Message, args: string[]) {
         args.forEach((arg) => {
             message.channel?.server
                 ?.fetchMember(arg)
