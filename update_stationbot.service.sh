@@ -1,4 +1,5 @@
 #!/bin/bash
+cd ~/stationbot
 git remote update
 UPSTREAM=${1:-'@{u}'}
 LOCAL=$(git rev-parse @)
