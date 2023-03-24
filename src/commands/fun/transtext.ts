@@ -3,7 +3,7 @@ import { Command } from "../../types";
 
 const transtext: Command = {
     name: "transtext",
-    description: "Make the bot say something using the transexual flag's colourscheme",
+    description: "Make the bot say something using the transexual flag's colourscheme (INCOMPLETE PLEASE FIX D:)",
     args: true,
     use: "<message>",
     async execute(message: Message, args: string[]) {
