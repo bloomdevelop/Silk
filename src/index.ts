@@ -21,6 +21,8 @@ console.log("disabledCommands:", disabledCommands);
 
 export const packageInfo = require("../package.json");
 export const commands: Map<string, Command> = new Map();
+
+// TODO: Switch from map to database cache
 export const userCache: Map<string, User> = new Map();
 
 const categories = fs.readdirSync("./dist/commands");
@@ -58,7 +60,7 @@ revolt.once("ready", () => {
 revolt.on("message", async (message: Message) => {
     // Cache user objects
     if (message.author)
-        userCache.set(message.author.username, message.author);
+        userCache.set(message.author_id, message.author);
 
     if (
         !message.content?.startsWith(process.env.PREFIX as string) ||
