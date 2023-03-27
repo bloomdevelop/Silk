@@ -4,14 +4,12 @@ import { Command } from "./types";
 import dotenv from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
-
-// Please forgive me for what I am about to do
 import E621 from "e621";
+
+dotenv.config();
 
 // Export the client so that it can be used through the esix command
 export const esixAPI = new E621();
-
-dotenv.config();
 
 const revolt = new Client();
 
