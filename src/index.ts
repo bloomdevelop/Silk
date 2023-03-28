@@ -6,6 +6,7 @@ import fs from "node:fs";
 import path from "node:path";
 import E621 from "e621";
 
+
 dotenv.config();
 
 // Export the client so that it can be used through the esix command
@@ -13,14 +14,14 @@ export const esixAPI = new E621();
 
 const revolt = new Client();
 
-const disabledCommands = process.env.DISABLED_PLUGINS?.split(",") || "";
+const disabledCommands =
+    process.env.DISABLED_PLUGINS?.split(",") || "";
 
 console.log("disabledCommands:", disabledCommands);
 
 export const packageInfo = require("../package.json");
 export const commands: Map<string, Command> = new Map();
 
-// TODO: Switch from map to database cache
 export const userCache: Map<string, User> = new Map();
 
 const categories = fs.readdirSync("./dist/commands");
@@ -43,22 +44,43 @@ for (const folder of categories) {
             commands.set(command.name, command);
             console.log("Loaded", command.name);
         } else {
-            console.log("Not loading", file, "because it's disabled")
+            console.log("Not loading", file, "because it's disabled");
         }
     }
 }
 
-revolt.once("ready", () => {
+revolt.once("ready", async () => {
+    console.log("Populating user cache, please wait...");
+
+    const serverArray = Array.from(revolt.servers.values());
+
+    serverArray.forEach(async (server) => {
+        const members = await server.fetchMembers();
+
+        members.users.forEach((user) => {
+            userCache.set(user.username, user);
+        });
+    });
+
     console.log("I am ready!");
 
     // Log Startup Unix Timestamp
-    startup = new Date;
+    startup = new Date();
+});
+
+revolt.on("member/join", async (member) => {
+    console.log("New user joined to server, adding to cache...");
+    if (member.user) userCache.set(member.user.username, member.user);
+    else
+        console.log(
+            "Cannot add member to cache. Missing user object."
+        );
 });
 
 revolt.on("message", async (message: Message) => {
     // Cache user objects
     if (message.author)
-        userCache.set(message.author_id, message.author);
+        userCache.set(message.author.username, message.author);
 
     if (
         !message.content?.startsWith(process.env.PREFIX as string) ||
