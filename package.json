@@ -18,7 +18,9 @@
   "author": "StationaryStation",
   "license": "GPLv3",
   "dependencies": {
+    "@types/chroma-js": "^2.4.0",
     "axios": "^1.3.4",
+    "chroma-js": "^2.4.2",
     "dayjs": "^1.11.7",
     "dotenv": "^16.0.3",
     "e621": "^2.2.6",
