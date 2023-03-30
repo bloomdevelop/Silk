@@ -9,9 +9,11 @@ const esix: Command = {
     use: "<tags>",
     async execute(message: Message, args: string[]) {
         try {
+            let tags: string = "";
+            if (!message.channel?.nsfw) tags = "rating:safe ";
             const post = await esixAPI.posts.search({
                 limit: 100,
-                tags: `rating:safe ${args.join(" ")}`,
+                tags: tags + args.join(" "),
             }).then(posts => posts[Math.floor(Math.random() *  (Math.floor(posts.length) - Math.ceil(0) + 1)) + Math.ceil(0)]).catch(e => {
                 throw e;
             })
