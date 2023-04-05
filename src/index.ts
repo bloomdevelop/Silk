@@ -5,6 +5,8 @@ import dotenv from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
 import E621 from "e621";
+import { Server } from "node:http";
+import { VotekickItem } from "./classes/Votekick";
 
 
 dotenv.config();
@@ -23,6 +25,7 @@ export const packageInfo = require("../package.json");
 export const commands: Map<string, Command> = new Map();
 
 export const userCache: Map<string, User> = new Map();
+export const currentVotekicks: Map<string, VotekickItem> = new Map();
 
 const categories = fs.readdirSync("./dist/commands");
 
@@ -76,6 +79,21 @@ revolt.on("member/join", async (member) => {
             "Cannot add member to cache. Missing user object."
         );
 });
+
+revolt.on("message/updated", async (m) => {
+    const votekick = currentVotekicks.get(m._id)
+    if (votekick && votekick.member.kickable && votekick.limit <= m.reactions.size) {
+        try {
+            await votekick.passVote().then(() => {
+                console.log("Kicked", votekick.member.user?.username, "for", votekick.reason)
+                // Assumes the user is already kicked
+                currentVotekicks.delete(votekick.id);
+            });
+        } catch (error) {
+            console.error("Failed to pass vote...")
+        }
+    }
+})
 
 revolt.on("message", async (message: Message) => {
     // Cache user objects

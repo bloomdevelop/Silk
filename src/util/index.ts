@@ -52,4 +52,11 @@ const trans = async (s: string) => {
         .join("\n");
 };
 
-export { gradient, trans, lescape };
+const clamp = (options: {
+    num: number;
+    min: number;
+    max: number;
+}): number =>
+    Math.min(Math.max(options.num, options.min), options.max);
+
+export { gradient, trans, lescape, clamp };
