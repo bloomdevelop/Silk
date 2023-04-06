@@ -1,7 +1,7 @@
 {
-  "name": "revoltjs-template",
+  "name": "stationbot-revolt",
   "version": "1.3.0",
-  "description": "Sample Revolt.JS Template",
+  "description": "Multi-purpose revolt bot",
   "main": "dist/index.js",
   "scripts": {
     "build": "rimraf dist && tsc",
