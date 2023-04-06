@@ -1,15 +1,29 @@
 import E621 from "e621";
-import type { Options } from "e621";
+import type { Options, Post } from "e621";
 export class E621APIHandler extends E621 {
 
     constructor(options?: Options) {
         super(options);   
     }
-
+    /**
+     * Gets a random post
+     * @param tags E621 Formated Tags
+     * @param limitQuery Maximum ammount of posts
+     * @example Usage
+     * ```ts
+     * const api = new E621APIHandler();
+     * 
+     * const post = await api.getRandomPost("rating:safe xenia_(linux)", 100);
+     * 
+     * // Get the post's image url
+     * console.log(post.file.url);
+     * ```
+     * @returns post
+     */
     public async getRandomPost(
         tags: string,
         limitQuery: number
-    ) {
+    ): Promise<Post> {
         try {
             const post = this.posts
                 .search({
