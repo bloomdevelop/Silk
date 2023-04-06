@@ -8,8 +8,8 @@ const cat: Command = {
         "Sends a random image of a cat. Powered by aws.random.cat",
     args: false,
     async execute(message: Message) {
-        axios.get("https://aws.random.cat/meow").then((res) => {
-            message.reply(`[cat :3](${res.data.file})`);
+        axios.get("https://cataas.com/cat?json=true").then((res) => {
+            message.reply(`[cat :3](https://cataas.com${res.data.url})`)
         });
     },
 };
