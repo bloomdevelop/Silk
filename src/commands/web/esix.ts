@@ -11,20 +11,20 @@ const esix: Command = {
     args: true,
     use: "<tags>",
     async execute(message: Message, args: string[]) {
-        let tags: string;
-        if (!message.channel?.nsfw) {
-            tags = `rating:safe ${args.join(" ")}`;
-        } else {
-            tags = args.join(" ");
-        }
         try {
-            const post = await api.getRandomPost(tags, 100);
+            const post = await api.getRandomPost(
+                args.join(" "),
+                100,
+                message.channel!.nsfw || false
+            );
             return await message.reply(
                 `[Result from E621](${post.file.url})`
             );
         } catch (error) {
             return await message.reply(
-                `Error trying to find "${tags}"\n\`\`\`\n${error}\n\`\`\``
+                `Error trying to find "${args.join(
+                    " "
+                )}"\n\`\`\`\n${error}\n\`\`\``
             );
         }
     },
