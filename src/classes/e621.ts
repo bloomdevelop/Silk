@@ -33,7 +33,7 @@ export class E621APIHandler extends E621 {
                 })
                 .then(
                     (posts) =>
-                        // Get a random post in the uglyest way possible
+                        // Get a random post in the ugliest way possible
                         posts[
                             Math.floor(
                                 Math.random() *
