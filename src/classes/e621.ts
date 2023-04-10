@@ -1,28 +1,29 @@
 import E621 from "e621";
 import type { Options, Post } from "e621";
 export class E621APIHandler extends E621 {
-
     constructor(options?: Options) {
-        super(options);   
+        super(options);
     }
     /**
      * Gets a random post
      * @param tags E621 Formated Tags
      * @param limitQuery Maximum ammount of posts
-     * @example Usage
+     * @param nsfw Allow NSFW Results, Default is false
+     * @example ## Usage
      * ```ts
      * const api = new E621APIHandler();
-     * 
+     *
      * const post = await api.getRandomPost("rating:safe xenia_(linux)", 100);
-     * 
+     *
      * // Get the post's image url
      * console.log(post.file.url);
      * ```
-     * @returns post
+     * @returns @type Post
      */
     public async getRandomPost(
         tags: string,
-        limitQuery: number
+        limitQuery: number,
+        nsfw?: boolean
     ): Promise<Post> {
         try {
             const post = this.posts
@@ -32,15 +33,19 @@ export class E621APIHandler extends E621 {
                     tags,
                 })
                 .then(
-                    (posts) =>
-                        // Get a random post in the ugliest way possible
-                        posts[
+                    (posts) => {
+                        const filtered: Post[] = nsfw
+                            ? posts
+                            : posts.filter((p) => p.rating === "s");
+                        return filtered[
                             Math.floor(
                                 Math.random() *
                                     (Math.floor(posts.length) -
                                         Math.ceil(0))
                             ) + Math.ceil(0)
-                        ]
+                        ];
+                    }
+                    // Get a random post in the ugliest way possible
                 );
             return Promise.resolve(post);
         } catch (error) {
