@@ -1,5 +1,6 @@
 import chroma from "chroma-js";
 
+// Code stolen from Lea's Selfbot :trol:
 const gradient = (start: string, end: string, lenght: number) => {
     const colours: string[] = [];
 
@@ -52,6 +53,7 @@ const trans = async (s: string) => {
         .join("\n");
 };
 
+// ok this is mine :3
 const clamp = (options: {
     num: number;
     min: number;
