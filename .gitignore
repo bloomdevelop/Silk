@@ -3,3 +3,4 @@ dist/
 pnpm-lock.yaml
 .env
 ecosystem.config.js
+*.service
