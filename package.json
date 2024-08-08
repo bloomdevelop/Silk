@@ -1,5 +1,5 @@
 {
-  "name": "stationbot-revolt",
+  "name": "slik",
   "version": "1.3.2",
   "description": "Multi-purpose revolt bot",
   "main": "dist/index.js",
@@ -15,27 +15,21 @@
     "typescript",
     "template"
   ],
-  "author": "StationaryStation",
+  "author": "Bloom Perez",
   "license": "GPLv3",
   "dependencies": {
-    "@types/chroma-js": "^2.4.0",
-    "axios": "^1.5.0",
-    "chroma-js": "^2.4.2",
-    "dayjs": "^1.11.9",
-    "dotenv": "^16.3.1",
-    "gotiny": "^1.5.4",
-    "openai": "^4.4.0",
-    "revolt.js": "^6.0.20"
+    "@types/chroma-js": "^2.4.4",
+    "axios": "^1.7.3",
+    "chroma-js": "^2.6.0",
+    "dayjs": "^1.11.12",
+    "dotenv": "^16.4.5",
+    "gotiny": "^1.5.5",
+    "revolt.js": "7.0.3"
   },
   "devDependencies": {
-    "@types/node": "^20.5.9",
-    "prettier": "^3.0.3",
-    "rimraf": "^5.0.1",
-    "typescript": "^5.2.2"
-  },
-  "bugs": {
-    "email": "raulytstation@outlook.com",
-    "url": "https://github.com/stationarystation/stationbot-revolt/issues/new"
-  },
-  "homepage": "https://github.com/stationarystation/stationbot-revolt"
+    "@types/node": "^22.1.0",
+    "prettier": "^3.3.3",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.5.4"
+  }
 }

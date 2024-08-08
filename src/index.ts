@@ -47,7 +47,7 @@ revolt.once("ready", async () => {
     console.log("I am ready!");
 });
 
-revolt.on("message", async (message: Message) => {
+revolt.on("messageCreate", async (message: Message) => {
     if (
         !message.content?.startsWith(process.env.PREFIX as string) ||
         message.author?.bot
@@ -68,17 +68,14 @@ revolt.on("message", async (message: Message) => {
         // Pass the arguments into that command
         const cmd = commands.get(command);
 
-        if (!cmd)
-            return message.reply(
-                `Unimate: ${command}: Command not found`
-            );
-
-        console.log("executing", `${cmd.name}...`);
+        if (!cmd) return message.reply(`Command not found: \`${command}\``);
+        console.log("Executing", `${cmd.name}...`);
         cmd?.execute(message, args, revolt);
     } catch (error) {
         // If command fails, notify the user
-        message.reply(`I had an error while executting ${command}`);
-        message.channel?.sendMessage(`\`\`\`ts\n${error}\n\`\`\``);
+        message.reply(
+            `I had an error while executing \`${command}\`\n\`\`\`ts\n${error}\n\`\`\``,
+        );
     }
 });
 
