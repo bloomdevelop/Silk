@@ -1,15 +1,17 @@
 import { Client, Message } from "revolt.js";
 
-declare interface Command {
+declare interface ICommand {
     name: string;
     description: string;
     usage?: string;
-    alias?: string[];
+    aliases?: string[];
     args?: boolean;
     cooldown?: number;
     execute(
         message: Message,
         args?: string[],
-        client: Client
+        client: Client,
     ): Promise<any>;
 }
+
+declare interface IConfiguration {}

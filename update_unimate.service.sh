@@ -1,15 +1,15 @@
 #!/bin/bash
-cd ~/unimate
+cd ~/silk
 git remote update
 UPSTREAM=${1:-'@{u}'}
 LOCAL=$(git rev-parse @)
 REMOTE=$(git rev-parse "$UPSTREAM")
 BASE=$(git merge-base @ "$UPSTREAM")
 if [ $LOCAL = $REMOTE ]; then
-    	echo "Unimate is up to date."
+    	echo "Silk is up to date."
 elif [ $LOCAL = $BASE ]; then
-    	echo "Unimate Stationbot..."
+    	echo "Updating..."
 	git pull
 	pnpm build
-	echo "Unimate Has been Updated"
+	echo "Silk Has been Updated"
 fi
