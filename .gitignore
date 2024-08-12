@@ -5,3 +5,4 @@ pnpm-lock.yaml
 ecosystem.config.js
 *.service
 debug.log
+*-config.json

@@ -14,4 +14,10 @@ declare interface ICommand {
     ): Promise<any>;
 }
 
-declare interface IConfiguration {}
+declare interface IConfiguration {
+    disabled_commands: string[],
+    prefix: string | "s?";
+    experiments: {
+        experimental_moderation: boolean
+    }
+}

@@ -49,6 +49,8 @@ revolt.once("ready", async () => {
   log.info(
     `Silk is ready to use, it took ${Date.now() - startup}ms to start...`,
   );
+
+  
 });
 
 revolt.on("messageCreate", async (message: Message) => {
