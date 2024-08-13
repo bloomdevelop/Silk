@@ -43,7 +43,7 @@ const help: ICommand = {
                     .map((a) => `\`${a}\``)
                     .join(", ")
                 : "This command doesn't have aliases"
-            }`,
+            }${commandInfo.wip ? "\n\n> This command is marked as work in progress" : ""}`,
           },
         ],
       });
