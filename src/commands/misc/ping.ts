@@ -6,7 +6,7 @@ const ping: ICommand = {
     usage: "ping",
     async execute(msg) {
         const sendDate = new Date().getTime();
-        const testAPI = await fetch("https://api.revolt.com/"); // Lets assume that this testAPI is for pinging into the server, not the bot.
+        const testAPI = await fetch("https://api.revolt.chat/"); // Lets assume that this testAPI is for pinging into the server, not the bot.
         const timeElapsed = new Date().getTime() - sendDate;
         msg.reply({
             embeds: [
