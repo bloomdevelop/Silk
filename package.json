@@ -24,8 +24,10 @@
         "dayjs": "^1.11.12",
         "dotenv": "^16.4.5",
         "gotiny": "^1.5.5",
+        "puppeteer": "^23.2.0",
         "revolt.js": "7.0.3",
-        "tslog": "^4.9.3"
+        "tslog": "^4.9.3",
+        "ulid": "^2.3.0"
     },
     "devDependencies": {
         "@types/node": "^22.2.0",

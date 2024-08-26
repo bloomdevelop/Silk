@@ -1,5 +1,5 @@
 import { ICommand } from "@/types";
-import { commandLog } from "../../utilities/log";
+import { commandLog } from "../../utils";
 import fs from "node:fs/promises";
 
 const votekick: ICommand = {

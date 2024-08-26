@@ -12,7 +12,8 @@ const ping: ICommand = {
             embeds: [
                 {
                     title: "Ping",
-                    description: `# Pong!\nAPI's Latency is \`${timeElapsed}ms\``,
+                    description: `# Pong!\nRevolt API's Latency is \`${timeElapsed}ms\``,
+                    colour: "#00FF00",
                 },
             ],
         });

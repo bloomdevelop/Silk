@@ -8,7 +8,7 @@ const default_settings: IConfiguration = {
     experiments: {
         experimental_moderation: true,
     },
-    blocked_users: []
+    blocked_users: [],
 };
 
 const config: ICommand = {
@@ -119,17 +119,7 @@ const config: ICommand = {
                             ? {
                                   prefix: args[2],
                               }
-                            : {} || args[1] == "disabled_commands"
-                              ? {
-                                    disabled_commands: [
-                                        args[2]
-                                            .replace(/,/gm, " ")
-                                            .trim()
-                                            .split(" ")
-                                            .flat(),
-                                    ],
-                                }
-                              : {}),
+                            : {}),
                     },
                     null,
                     2,
@@ -154,6 +144,101 @@ const config: ICommand = {
                         },
                     ],
                 });
+            }
+        }
+
+        if (args[0] == "command") {
+            if (!args[1])
+                return msg.reply({
+                    embeds: [
+                        {
+                            title: "Configuration",
+                            description:
+                                "No arguments were provided!",
+                        },
+                    ],
+                });
+
+            if (args[1] == "disable") {
+                if (!args[2])
+                    return msg.reply({
+                        embeds: [
+                            {
+                                title: "Configuration",
+                                description:
+                                    "No arguments were provided!",
+                            },
+                        ],
+                    });
+                try {
+                    const file = await fs.readFile(
+                        `${fileTemplate}`,
+                        "utf-8",
+                    );
+                    if (args[2] === "reset") {
+                        const fileJSON = JSON.parse(file);
+                        const newFile = JSON.stringify(
+                            {
+                                ...fileJSON,
+                                ...{
+                                    disabled_commands: [],
+                                },
+                            },
+                            null,
+                            2,
+                        );
+                        fs.writeFile(`${fileTemplate}`, newFile).then(
+                            () => {
+                                msg.reply({
+                                    embeds: [
+                                        {
+                                            title: "Configuration",
+                                            description: "All disabled commands is now enabled!",
+                                            colour: "#00FF00",
+                                        },
+                                    ],
+                                });
+                            },
+                        );
+                    } 
+
+                    const fileJSON = JSON.parse(file);
+                    const newFile = JSON.stringify(
+                        {
+                            ...fileJSON,
+                            ...{
+                                disabled_commands: [
+                                    ...fileJSON.disabled_commands,
+                                    args[2],
+                                ],
+                            },
+                        },
+                        null,
+                        2,
+                    );
+                    fs.writeFile(`${fileTemplate}`, newFile).then(
+                        () => {
+                            msg.reply({
+                                embeds: [
+                                    {
+                                        title: "Configuration",
+                                        description: `Command \`${args[2]}\` has been disabled!`,
+                                        colour: "#00FF00",
+                                    },
+                                ],
+                            });
+                        },
+                    );
+                } catch (err) {
+                    return msg.reply({
+                        embeds: [
+                            {
+                                title: "Configuration",
+                                description: `Something went wrong while getting the configuration file!\n\`\`\`\n${err}\n\`\`\``,
+                            },
+                        ],
+                    });
+                }
             }
         }
     },

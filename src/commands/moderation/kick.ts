@@ -1,5 +1,5 @@
 import { ICommand } from "@/types";
-import { log } from "../../utilities/log";
+import { log } from "../../utils";
 
 const kick: ICommand = {
     name: "kick",
