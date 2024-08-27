@@ -7,7 +7,7 @@ const browserManager = new PuppeteerController();
 
 const browser: ICommand = {
     name: "browser",
-    description: "Navigates through the web... \nInside revolt.chat!",
+    description: "Navigates through the web... \nInside revolt.chat!\n> Also it was ported from [browserbot by Amy](https://github.com/amycatgirl/revolt-browserbot)",
     usage: "browser <create|navigate|goto|listtab|click|write|screenshot>\n",
     wip: true,
     aliases: ["chromium", "firefox", "chrome", "edge", "www"],
@@ -145,6 +145,76 @@ const browser: ICommand = {
                     },
                 ],
             });
+        };
+        if (args[0] === "click") {
+            if (!args[1])
+                return msg.reply({
+                    embeds: [
+                        {
+                            title: "Browser",
+                            description: "Please specify a selector.",
+                            colour: "#FF0000",
+                        },
+                    ],
+                });
+
+            const instance = browserManager.getInstance(msg.server?.id as string);
+            const tab = instance?.getTab(msg.authorId as string);
+
+            if (!tab) return msg.reply({
+                embeds: [
+                    {
+                        title: "Browser",
+                        description: "No tab found!",
+                        colour: "#FF0000",
+                    },
+                ],
+            });
+            commandLog.debug(`Try clicking on ${args[1]}`);
+            const element = await tab?._page.$(args[1] as string);
+
+            if (!element) return msg.reply({
+                embeds: [
+                    {
+                        title: "Browser",
+                        description: "Element not found!",
+                        colour: "#00FF00",
+                    },
+                ],
+            });
+
+            try {
+                await Promise.all([
+                    tab._page.waitForSelector('html'),
+                    element.click()
+                ]).catch((err) => {throw new Error(err)})
+                const screenshot = await tab?.takeScreenshot();
+                const fileID = await AutumnService.uploadFile(
+                    "attachments",
+                    screenshot as Blob,
+                );
+
+                msg.reply({
+                    embeds: [
+                        {
+                            title: "Browser",
+                            description: `Clicked on ${args[1]}`,
+                            colour: "#00FF00",
+                        },
+                    ],
+                    attachments: [fileID],
+                });
+            } catch(err) {
+                msg.reply({
+                    embeds: [
+                        {
+                            title: "Browser",
+                            description: `# Something went wrong!\n\`\`\`ts\n${err}\n\`\`\``,
+                            colour: "#FF0000",
+                        },
+                    ],
+                });
+            }
         }
     },
 };
