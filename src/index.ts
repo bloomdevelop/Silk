@@ -68,7 +68,6 @@ revolt.on("messageCreate", async (msg: Message) => {
     const fileTemplate = `${msg.server?.id}-config.json`;
 
     fs.readFile(fileTemplate).then((data) => {
-        const dataBuffer = Buffer.from(data);
         const configData = JSON.parse(data.toString());
         const args: string[] = msg.content
             .slice((process.env.PREFIX as string).length)
