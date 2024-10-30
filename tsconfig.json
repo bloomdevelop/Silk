@@ -1,21 +1,33 @@
 {
     "compilerOptions": {
         "target": "ESNext",
-        "module": "ESNext",
+        "module": "CommonJS",
         "moduleResolution": "node",
         "allowJs": true,
         "resolveJsonModule": true,
         "outDir": "dist",
         "removeComments": true,
-        // "allowSyntheticDefaultImports": true,
+        "allowSyntheticDefaultImports": true,
         "esModuleInterop": true,
         "forceConsistentCasingInFileNames": true,
         "strict": true,
         "strictNullChecks": true,
         "useUnknownInCatchVariables": true,
-        // "noUnusedLocals": true,
-        // "noUnusedParameters": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
         "noFallthroughCasesInSwitch": true,
         "skipLibCheck": true,
+        "noImplicitAny": true,
+        "noImplicitThis": true,
+        "alwaysStrict": true,
+        "declaration": true,
+        "sourceMap": true,
+        "incremental": true
+    },
+    "include": ["src/**/*"],
+    "exclude": ["node_modules", "dist"],
+    "ts-node": {
+        "transpileOnly": true,
+        "files": true
     }
 }

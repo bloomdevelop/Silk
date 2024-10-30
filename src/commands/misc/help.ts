@@ -1,62 +1,78 @@
-import { commands } from "../../index"; // I had to manually use relative import bc of f****king TS :/
 import { ICommand } from "../../types";
+import { Client, Message } from "revolt.js";
+import { CommandManager } from "../../managers/CommandManager";
 
 const help: ICommand = {
-  name: "help",
-  description: "Help",
-  usage: "help <command>",
-  async execute(msg, args) {
-    const commandsList = Array.from(commands.entries())
-      .map(([name, cmd]) => {
-        const aliases = cmd.aliases?.length
-          ? cmd.aliases.join(", ")
-          : "No aliases";
-        return `- **${name}** Aliases: ${aliases}`;
-      })
-      .join("\n");
-    if (args) {
-      let commandInfo;
-      for (const [name, cmd] of commands.entries()) {
-        if (name === args[0] || cmd.aliases?.includes(args[0])) {
-          commandInfo = cmd;
-          break;
+    name: "help",
+    description: "Display information about available commands",
+    usage: "help [command]",
+    category: "misc",
+    execute: async (message: Message, args: string[], client: Client) => {
+        const commandManager = new CommandManager(client);
+        await commandManager.loadCommands();
+        const commands = commandManager.getCommands();        if (!args.length) {
+            const categories = new Map<string, ICommand[]>();
+
+            commands.forEach((cmd) => {
+                const category = cmd.category || 'Uncategorized';
+                if (!categories.has(category)) {
+                    categories.set(category, []);
+                }
+                categories.get(category)!.push(cmd);
+            });
+            console.log("Commands size:", commands.size);
+            console.log("Categories:", Array.from(categories.entries()));
+
+
+            const helpText = Array.from(categories.entries())
+                .map(([category, cmds]) => {
+                    const commandList = cmds
+                        .map(cmd => `\`${cmd.name}\``)
+                        .join(', ');
+                    return `## ${category}\n${commandList}`;
+                })
+                .join('\n\n');
+
+            return message.reply({
+                embeds: [{
+                    title: "📚 Command List",
+                    description: helpText + "\n\nUse `help <command>` for detailed info",
+                    colour: "#00ff00"
+                }]
+            });
         }
-      }
 
-      if (!commandInfo)
-        return msg.reply({
-          embeds: [
-            {
-              title: "Help",
-              description: `No commands was found, but there's a list of available commands:\n${commandsList}`,
-            },
-          ],
+        // Detailed command help
+        const commandName = args[0].toLowerCase();
+        const command = commands.get(commandName);
+
+        if (!command) {
+            return message.reply({
+                embeds: [{
+                    title: "❌ Command Not Found",
+                    description: `No command found with name \`${commandName}\``,
+                    colour: "#ff0000"
+                }]
+            });
+        }
+
+        const commandInfo = [
+            `# ${command.name}`,
+            command.description,
+            '',
+            `**Usage:** \`${command.usage || command.name}\``,
+            `**Category:** ${command.category || "None"}`,
+            command.aliases?.length ? `**Aliases:** ${command.aliases.map((a: string) => `\`${a}\``).join(', ')}` : null
+        ].filter(Boolean).join('\n');
+
+        return message.reply({
+            embeds: [{
+                title: "Command Details",
+                description: commandInfo,
+                colour: "#0099ff"
+            }]
         });
-
-      msg.reply({
-        embeds: [
-          {
-            title: `Help`,
-            description: `# ${commandInfo?.name}\n${commandInfo?.description}\n## Usage\n${commandInfo?.usage ? `\`${commandInfo?.usage}\`` : "This command doesn't have usage"}\n## Aliases\n${
-              commandInfo?.aliases
-                ? commandInfo.aliases
-                    .map((a) => `\`${a}\``)
-                    .join(", ")
-                : "This command doesn't have aliases"
-            }${commandInfo.wip ? "\n\n> This command is marked as work in progress" : ""}`,
-          },
-        ],
-      });
-    } else
-      return msg.reply({
-        embeds: [
-          {
-            title: "Help",
-            description:
-              "Use `help <command>` to get more information about a specific command.",
-          },
-        ],
-      });
-  },
+    }
 };
+
 module.exports = help;

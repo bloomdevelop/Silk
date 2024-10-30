@@ -1,5 +1,5 @@
 import { ICommand } from "../../types";
-import { commandLog } from "../../utils";
+import { commandLogger } from "../../utils";
 import fs from "node:fs/promises";
 
 const votekick: ICommand = {
@@ -7,7 +7,6 @@ const votekick: ICommand = {
     description:
         "Starts a votekick for a user with a reason provided",
     usage: "votekick <userId> <reason>",
-    wip: true,
     async execute(msg, args) {
         let config;
         try {
@@ -59,7 +58,7 @@ const votekick: ICommand = {
         }
         let member;
         try {
-            member = await msg.server?.getMember(args[0]);
+            member = msg.server?.getMember(args[0]);
             msg.reply({
                 embeds: [
                     {
@@ -78,7 +77,7 @@ const votekick: ICommand = {
                 });
             });
         } catch (error) {
-            commandLog.error(`Error getting member: ${error}`);
+            commandLogger.error(`Error getting member: ${error}`);
             return msg.reply({
                 embeds: [
                     {
