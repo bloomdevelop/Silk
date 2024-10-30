@@ -75,7 +75,7 @@ const votekick: ICommand = {
                 });
                 msg.react(":negative_squared_cross_mark:").catch((err) => {
                     throw new Error(err);
-                });;
+                });
             });
         } catch (error) {
             commandLog.error(`Error getting member: ${error}`);

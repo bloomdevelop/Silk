@@ -145,7 +145,7 @@ const browser: ICommand = {
                     },
                 ],
             });
-        };
+        }
         if (args[0] === "click") {
             if (!args[1])
                 return msg.reply({

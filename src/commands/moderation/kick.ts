@@ -6,7 +6,7 @@ const kick: ICommand = {
     description: "Kicks to a user with reason provided",
     usage: "kick <userId> <reason>",
     wip: true,
-    async execute(msg, args, client) {
+    async execute(msg) {
         if (msg.member) {
             for (const role of msg.member?.orderedRoles) {
                 if (role.permissions?.a) {
