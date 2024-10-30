@@ -1,4 +1,4 @@
-import { ICommand } from "@/types";
+import { ICommand } from "../../types";
 import { commandLog } from "../../utils";
 import fs from "node:fs/promises";
 

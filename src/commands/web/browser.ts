@@ -1,4 +1,4 @@
-import { ICommand } from "@/types";
+import { ICommand } from "../../types";
 import { PuppeteerController } from "../../lib/browser";
 import { AutumnService } from "../../lib/autumn";
 import { commandLog } from "../../utils";

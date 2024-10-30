@@ -1,5 +1,5 @@
 import { commands } from "../../index"; // I had to manually use relative import bc of f****king TS :/
-import { ICommand } from "@/types";
+import { ICommand } from "../../types";
 
 const help: ICommand = {
   name: "help",

@@ -1,4 +1,4 @@
-import { ICommand, IConfiguration } from "@/types";
+import { ICommand, IConfiguration } from "../../types";
 import fs from "node:fs/promises";
 
 const default_settings: IConfiguration = {

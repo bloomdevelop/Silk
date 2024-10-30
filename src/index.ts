@@ -137,4 +137,4 @@ revolt.on("messageCreate", async (msg: Message) => {
     });
 });
 
-revolt.loginBot(process.env.TOKEN!);
+await revolt.loginBot(process.env.TOKEN!);

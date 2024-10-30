@@ -1,4 +1,3 @@
-import { MessageEmbed, TextEmbed } from "revolt.js";
 import { ICommand } from "../../types";
 
 const fetch: ICommand = {

@@ -1,34 +1,21 @@
 {
     "compilerOptions": {
         "target": "ESNext",
-
-        "module": "CommonJS",
-
+        "module": "ESNext",
         "moduleResolution": "node",
         "allowJs": true,
-
         "resolveJsonModule": true,
-
         "outDir": "dist",
         "removeComments": true,
-
         // "allowSyntheticDefaultImports": true,
         "esModuleInterop": true,
-
         "forceConsistentCasingInFileNames": true,
-
         "strict": true,
-
+        "strictNullChecks": true,
         "useUnknownInCatchVariables": true,
-
         // "noUnusedLocals": true,
         // "noUnusedParameters": true,
-
         "noFallthroughCasesInSwitch": true,
-
         "skipLibCheck": true,
-        "paths": {
-          "@/types": ["./src/types.d.ts"],
-        }
     }
 }

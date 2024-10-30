@@ -1,4 +1,4 @@
-import { ICommand } from "@/types";
+import { ICommand } from "../../types";
 
 const warn: ICommand = {
   name: "warn",
