@@ -22,11 +22,12 @@ export class EventManager {
         this.registerEvent('error', this.handleError.bind(this))
         this.registerEvent('channelCreate', this.handleChannelCreate.bind(this))
         this.registerEvent('channelDelete', this.handleChannelDelete.bind(this))
+        this.registerEvent('reconnect', this.handleReconnect.bind(this))
     }
 
     registerEvent(eventName: string, handler: EventHandler) {
         this.events.set(eventName, handler)
-        // @ts-expect-error - It requires to have keyof Events but it wasn't exported.
+        // @ts-expect-error - It requires to have keyof Events but it wasn't exported at revolt.js package.
         this.client.on(eventName, handler)
         this.logger.info(`Registered event: ${eventName}`)
     }
@@ -69,6 +70,10 @@ export class EventManager {
         } catch (error) {
             this.logger.error('Error handling channel deletion:', error)
         }
+    }
+
+    private async handleReconnect() {
+        this.logger.info('Client has been reconnected!')
     }
 
     private handleError(error: Error) {

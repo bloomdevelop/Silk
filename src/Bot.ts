@@ -34,6 +34,7 @@ export class Bot {
             this.eventManager.registerEvent('serverDelete', this.handleServerLeave.bind(this));
             this.eventManager.registerEvent('channelCreate', this.handleChannelCreate.bind(this));
             this.eventManager.registerEvent('channelDelete', this.handleChannelDelete.bind(this));
+            this.eventManager.registerEvent('reconnect', this.handleReconnect.bind(this));
 
             await this.client.loginBot(this.config.getToken());
             this.logger.info('Bot started successfully');
@@ -62,6 +63,10 @@ export class Bot {
         } catch (error) {
             this.logger.error('Error handling message:', error);
         }
+    }
+
+    private async handleReconnect() {
+        this.logger.info('Client has been reconnected!');
     }
 
     private async handleServerJoin(server: Server) {
