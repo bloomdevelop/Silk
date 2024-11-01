@@ -7,32 +7,29 @@ const TIMEOUT = 30000; // 30 second timeout
 
 const sanitizeOutput = (output: string): string => {
     if (!output) return "";
-    
+
     return output
-        .replace(/`/g, '\\`')     // Escape backticks
-        .replace(/\\/g, '\\\\')   // Escape backslashes
-        .replace(/\*/g, '\\*')    // Escape asterisks
-        .replace(/_/g, '\\_')     // Escape underscores
-        .replace(/~/g, '\\~')     // Escape tildes
+        .replace(/\\/g, '\\\\') // Escape backslashes
+        .replace(/`/g, '\\`') // Escape backticks
         .replace(/@/g, '@\u200b') // Break mentions
         .substring(0, MAX_OUTPUT_LENGTH);
 };
 
 const formatOutput = (stdout: string, stderr: string, error?: Error): string => {
     const parts: string[] = [];
-    
+
     if (stdout?.trim()) {
         parts.push("**Output:**", "```ansi", sanitizeOutput(stdout), "```");
     }
-    
+
     if (stderr?.trim()) {
         parts.push("**Error:**", "```ansi", sanitizeOutput(stderr), "```");
     }
-    
+
     if (error) {
         parts.push("**System Error:**", "```", sanitizeOutput(error.message), "```");
     }
-    
+
     return parts.join("\n") || "No output";
 };
 
