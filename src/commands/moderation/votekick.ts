@@ -10,6 +10,11 @@ const votekick: ICommand = {
     description: "Starts a votekick for a user",
     usage: "votekick <userId> <reason>",
     category: "moderation",
+    flags: {
+        wip: true,
+        disabled: true
+    },
+
     async execute(msg, args) {
         if (!args || args.length < 2) {
             return msg.reply({
