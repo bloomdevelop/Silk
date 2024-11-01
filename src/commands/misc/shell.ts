@@ -6,8 +6,14 @@ const MAX_OUTPUT_LENGTH = 1900; // Maximum length for message content
 const TIMEOUT = 30000; // 30 second timeout
 
 const sanitizeOutput = (output: string): string => {
+    if (!output) return "";
+    
     return output
-        .replace(/`/g, '\\`') // Escape backticks
+        .replace(/`/g, '\\`')     // Escape backticks
+        .replace(/\\/g, '\\\\')   // Escape backslashes
+        .replace(/\*/g, '\\*')    // Escape asterisks
+        .replace(/_/g, '\\_')     // Escape underscores
+        .replace(/~/g, '\\~')     // Escape tildes
         .replace(/@/g, '@\u200b') // Break mentions
         .substring(0, MAX_OUTPUT_LENGTH);
 };
@@ -16,15 +22,15 @@ const formatOutput = (stdout: string, stderr: string, error?: Error): string => 
     const parts: string[] = [];
     
     if (stdout?.trim()) {
-        parts.push("**Output:**", "```", sanitizeOutput(stdout), "```");
+        parts.push("**Output:**", "```ansi", sanitizeOutput(stdout), "```");
     }
     
     if (stderr?.trim()) {
-        parts.push("**Error:**", "```", sanitizeOutput(stderr), "```");
+        parts.push("**Error:**", "```ansi", sanitizeOutput(stderr), "```");
     }
     
     if (error) {
-        parts.push("**System Error:**", "```", error.message, "```");
+        parts.push("**System Error:**", "```", sanitizeOutput(error.message), "```");
     }
     
     return parts.join("\n") || "No output";
@@ -86,7 +92,7 @@ const shell: ICommand = {
                 embeds: [{
                     title: `Shell Command ${statusText}`,
                     description: [
-                        `**Command:** \`${command}\``,
+                        `**Command:** \`${sanitizeOutput(command)}\``,
                         `**Exit Code:** ${exitCode}`,
                         "",
                         formattedOutput
@@ -102,11 +108,11 @@ const shell: ICommand = {
                 embeds: [{
                     title: "Shell Command Error",
                     description: [
-                        `**Command:** \`${command}\``,
+                        `**Command:** \`${sanitizeOutput(command)}\``,
                         "",
                         "**Error:**",
                         "```",
-                        error instanceof Error ? error.message : "Unknown error occurred",
+                        sanitizeOutput(error instanceof Error ? error.message : "Unknown error occurred"),
                         "```"
                     ].join("\n"),
                     colour: "#ff0000"
