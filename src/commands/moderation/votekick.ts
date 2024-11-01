@@ -10,10 +10,6 @@ const votekick: ICommand = {
     description: "Starts a votekick for a user",
     usage: "votekick <userId> <reason>",
     category: "Moderation",
-    flags: {
-        wip: true,
-        disabled: true
-    },
 
     async execute(msg, args) {
         if (!args || args.length < 2) {
@@ -68,16 +64,15 @@ const votekick: ICommand = {
             }
 
             // Check if user is a bot through the user object
-            // Only uncomments when finished
-            // if (targetMember.user?.bot) {
-            //     return msg.reply({
-            //         embeds: [{
-            //             title: "Error",
-            //             description: "Cannot votekick a bot",
-            //             colour: "#ff0000"
-            //         }]
-            //     });
-            // }
+            if (targetMember.user?.bot) {
+                return msg.reply({
+                    embeds: [{
+                        title: "Error",
+                        description: "Cannot votekick a bot",
+                        colour: "#ff0000"
+                    }]
+                });
+            }
 
             const reason = args.slice(1).join(" ").trim();
             const voteMessage = await msg.reply({
@@ -99,8 +94,8 @@ const votekick: ICommand = {
                 throw new Error("Failed to create vote message");
             }
 
-            await voteMessage.react(decodeURIComponent("\u2705"));
-            await voteMessage.react(decodeURIComponent("\u274C"));
+            await voteMessage.react(encodeURIComponent("\u2705"));
+            await voteMessage.react(encodeURIComponent("\u274C"));
 
             // Wait for votes
             await new Promise(resolve => setTimeout(resolve, VOTE_DURATION));
@@ -110,8 +105,8 @@ const votekick: ICommand = {
             if (!message) throw new Error("Could not fetch vote message");
 
             // Get reactions using Unicode
-            const yesReaction = message.reactions?.get(decodeURIComponent("\u2705"));
-            const noReaction = message.reactions?.get(decodeURIComponent("\u274C"));
+            const yesReaction = message.reactions?.get(encodeURIComponent("\u2705"));
+            const noReaction = message.reactions?.get(encodeURIComponent("\u274C"));
 
             const yesVotes = yesReaction?.size || 0;
             const noVotes = noReaction?.size || 0;
