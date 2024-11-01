@@ -4,16 +4,19 @@ import { commandLogger } from "../utils/Logger.js"
 import { Logger as TsLogger, ILogObj} from "tslog";
 import fs from "node:fs/promises"
 import path from "node:path"
+import { RateLimitManager } from "./RateLimitManager.js";
 
 export class CommandManager {
     readonly client: Client
     readonly commands: Map<string, ICommand>
     private logger: TsLogger<ILogObj>
+    private rateLimitManager: RateLimitManager;
 
     constructor(client: Client) {
         this.client = client
         this.commands = new Map()
         this.logger = commandLogger
+        this.rateLimitManager = RateLimitManager.getInstance();
     }
 
     async loadCommands() {
@@ -75,6 +78,31 @@ export class CommandManager {
                 }]
             })
             return
+        }
+
+        // Check rate limit
+        if (command.rateLimit) {
+            const userId = message.author?.id;
+            if (!userId) return;
+
+            if (this.rateLimitManager.isRateLimited(userId, command.rateLimit)) {
+                const remainingTime = Math.ceil(
+                    this.rateLimitManager.getRemainingTime(userId, command.rateLimit) / 1000
+                );
+                
+                return message.reply({
+                    embeds: [{
+                        title: "Rate Limited",
+                        description: [
+                            "You are being rate limited!",
+                            `Please wait ${remainingTime} seconds before using this command again.`,
+                            "",
+                            `**Limit**: ${command.rateLimit.usages} uses per ${command.rateLimit.duration / 1000}s`
+                        ].join("\n"),
+                        colour: "#ff0000"
+                    }]
+                });
+            }
         }
 
         try {
