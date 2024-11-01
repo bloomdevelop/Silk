@@ -4,6 +4,10 @@
     "description": "Multi-purpose revolt bot",
     "main": "dist/index.js",
     "type": "module",
+    "repository": {
+        "type": "github",
+        "url": "https://github.com/bloomdevelop/Slik"
+    },
     "scripts": {
         "build": "rimraf dist && tsc && cp .env dist/.env",
         "start": "nodemon .",

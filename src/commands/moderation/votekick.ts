@@ -9,7 +9,7 @@ const votekick: ICommand = {
     name: "votekick",
     description: "Starts a votekick for a user",
     usage: "votekick <userId> <reason>",
-    category: "moderation",
+    category: "Moderation",
     flags: {
         wip: true,
         disabled: true

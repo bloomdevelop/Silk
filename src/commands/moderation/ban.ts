@@ -5,7 +5,7 @@ const ban: ICommand = {
     name: "ban",
     description: "Bans a user from the server",
     usage: "ban <userId> <reason>",
-    category: "moderation",
+    category: "Moderation",
     async execute(msg, args) {
         if (!args || args.length < 2) {
             return msg.reply({

@@ -1,9 +1,24 @@
 import { Client, Message } from "revolt.js";
 
+type Category = "Moderation" | "Economy" | "System" | "Utility" | "Fun" | "Info" | "Hidden";
+
+export interface RateLimitConfig {
+    usages: number;      // How many times the command can be used
+    duration: number;    // Time window in milliseconds
+    users?: Map<string, RateLimitInfo>; // Track user rate limits
+    global?: boolean;    // Whether this limit applies globally
+}
+
+export interface RateLimitInfo {
+    usages: number;      // Current number of uses
+    resetTime: number;   // When the rate limit resets
+    lastUsed?: number;   // Last time the command was used
+}
+
 export interface ICommand {
     name: string;
     description: string;
-    category?: string;
+    category: Category;
     usage: string;
     aliases?: string[];
     args?: {
@@ -15,14 +30,12 @@ export interface ICommand {
         user?: string[];
         bot?: string[];
     };
-    cooldown?: {
-        duration: number;
-        users?: Set<string>;
-    };
+    rateLimit?: RateLimitConfig; // Added rate limit configuration
     flags?: {
         wip?: boolean;
         disabled?: boolean;
         ownerOnly?: boolean;
+        dangerous?: boolean;
     };
     execute(
         message: Message,

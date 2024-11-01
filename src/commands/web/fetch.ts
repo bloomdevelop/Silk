@@ -23,7 +23,7 @@ const fetch: ICommand = {
     description: "Fetches data from a URL and returns the response in JSON format",
     usage: "fetch <url> [useHttps]",
     aliases: ["curl", "wget", "http"],
-    category: "web",
+    category: "Utility",
     async execute(message, args) {
         if (!args?.length) {
             return message.reply({

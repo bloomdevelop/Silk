@@ -1,29 +1,119 @@
 import { ICommand } from "../../types.js";
-import { spawnSync } from "node:child_process";
+import { spawnSync, SpawnSyncOptions } from "node:child_process";
+import { commandLogger } from "../../utils/Logger.js";
+
+const MAX_OUTPUT_LENGTH = 1900; // Maximum length for message content
+const TIMEOUT = 30000; // 30 second timeout
+
+const sanitizeOutput = (output: string): string => {
+    return output
+        .replace(/`/g, '\\`') // Escape backticks
+        .replace(/@/g, '@\u200b') // Break mentions
+        .substring(0, MAX_OUTPUT_LENGTH);
+};
+
+const formatOutput = (stdout: string, stderr: string, error?: Error): string => {
+    const parts: string[] = [];
+    
+    if (stdout?.trim()) {
+        parts.push("**Output:**", "```", sanitizeOutput(stdout), "```");
+    }
+    
+    if (stderr?.trim()) {
+        parts.push("**Error:**", "```", sanitizeOutput(stderr), "```");
+    }
+    
+    if (error) {
+        parts.push("**System Error:**", "```", error.message, "```");
+    }
+    
+    return parts.join("\n") || "No output";
+};
 
 const shell: ICommand = {
     name: "shell",
-    description:
-        "Runs shell commands. It does reflects depending what's OS you're running on this bot.\n> ### Security Note ⚠️.\n> This command can be dangerous to use without supervisions from the creator of this bot, not only it's is dangerous, but **you could absolutely execute any programs the host has it installed**, meaning it will be **more vulnerable to some specific scenario such as triggering arbitrary command execution using metacharacters as explained in the `node.js` documentation**.\n> #### So please use it carefully!",
-    aliases: ["sh", "bash", "ps", "cmd", "fish", "zsh"],
+    description: "Executes shell commands based on the host OS.\n\n**⚠️ WARNING:** This command can execute arbitrary system commands and should only be used by bot owners. Use with extreme caution.",
     usage: "shell <command>",
-    async execute(msg, args) {
-        const spacedArgs: string =
-            args?.toString().replace(/,/gm, " ") || "";
-        if (!args || args.length === 0)
-            return msg.reply("Please provide a command to run.");
-        const result = spawnSync(spacedArgs, {
-            shell: true,
-        });
-        msg.reply({
-            embeds: [
-                {
-                    title: "Shell - Command Output",
-                    description: `Command: \`${spacedArgs}\`\n\`\`\`\n${result.output.toString().substring(0, 1200).replace(/,/gm, "")}\`\`\``,
-                },
-            ],
-        });
+    category: "System",
+    aliases: ["sh", "bash", "cmd"],
+    flags: {
+        ownerOnly: true,
+        dangerous: true
     },
+
+    async execute(msg, args) {
+        if (!args?.length) {
+            return msg.reply({
+                embeds: [{
+                    title: "Error",
+                    description: "Please provide a command to run",
+                    colour: "#ff0000"
+                }]
+            });
+        }
+
+        const command = args.join(" ");
+        commandLogger.info(`Executing shell command: ${command}`);
+
+        try {
+            // Configure spawn options
+            const options: SpawnSyncOptions = {
+                shell: true,
+                timeout: TIMEOUT,
+                encoding: 'utf8',
+                maxBuffer: 1024 * 1024 * 2, // 2MB buffer
+                windowsHide: true
+            };
+
+            // Execute command
+            const result = spawnSync(command, options);
+
+            // Handle different types of results
+            if (result.error) {
+                throw result.error;
+            }
+
+            const stdout = result.stdout?.toString() || "";
+            const stderr = result.stderr?.toString() || "";
+            const exitCode = result.status;
+
+            // Format the output
+            const formattedOutput = formatOutput(stdout, stderr);
+            const statusColor = exitCode === 0 ? "#00ff00" : "#ff0000";
+            const statusText = exitCode === 0 ? "Success" : "Failed";
+
+            return msg.reply({
+                embeds: [{
+                    title: `Shell Command ${statusText}`,
+                    description: [
+                        `**Command:** \`${command}\``,
+                        `**Exit Code:** ${exitCode}`,
+                        "",
+                        formattedOutput
+                    ].join("\n"),
+                    colour: statusColor
+                }]
+            });
+
+        } catch (error) {
+            commandLogger.error("Shell command error:", error);
+
+            return msg.reply({
+                embeds: [{
+                    title: "Shell Command Error",
+                    description: [
+                        `**Command:** \`${command}\``,
+                        "",
+                        "**Error:**",
+                        "```",
+                        error instanceof Error ? error.message : "Unknown error occurred",
+                        "```"
+                    ].join("\n"),
+                    colour: "#ff0000"
+                }]
+            });
+        }
+    }
 };
 
 export default shell;

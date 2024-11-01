@@ -2,32 +2,58 @@ import { ICommand } from "../../types.js";
 import { Client, Message } from "revolt.js";
 import { CommandManager } from "../../managers/CommandManager.js";
 
+const formatFlags = (flags?: { [key: string]: boolean }): string | null => {
+    if (!flags || Object.keys(flags).length === 0) return null;
+
+    const flagEmojis: { [key: string]: string } = {
+        ownerOnly: "👑",
+        disabled: "🚫",
+        wip: "🚧",
+        dangerous: "⚠️"
+    };
+
+    return Object.entries(flags)
+        .filter(([_, value]) => value)
+        .map(([flag, _]) => `${flagEmojis[flag] || "🔹"} ${flag}`)
+        .join("\n");
+};
+
 const help: ICommand = {
     name: "help",
     description: "Display information about available commands",
     usage: "help [command]",
-    category: "misc",
+    category: "Info",
     execute: async (message: Message, args: string[], client: Client) => {
         const commandManager = new CommandManager(client);
         await commandManager.loadCommands();
-        const commands = commandManager.getCommands();        if (!args.length) {
+        const commands = commandManager.getCommands();
+
+        if (!args.length) {
             const categories = new Map<string, ICommand[]>();
 
             commands.forEach((cmd) => {
+                // Skip disabled commands unless user is owner
+                if (cmd.flags?.disabled && !message.author?.bot) {
+                    return;
+                }
+                
                 const category = cmd.category || 'Uncategorized';
                 if (!categories.has(category)) {
                     categories.set(category, []);
                 }
                 categories.get(category)!.push(cmd);
             });
-            console.log("Commands size:", commands.size);
-            console.log("Categories:", Array.from(categories.entries()));
-
 
             const helpText = Array.from(categories.entries())
                 .map(([category, cmds]) => {
                     const commandList = cmds
-                        .map(cmd => `\`${cmd.name}\``)
+                        .map(cmd => {
+                            const flagIcons = [];
+                            if (cmd.flags?.ownerOnly) flagIcons.push("👑");
+                            if (cmd.flags?.dangerous) flagIcons.push("⚠️");
+                            if (cmd.flags?.wip) flagIcons.push("🚧");
+                            return `\`${cmd.name}\` ${flagIcons.join("")}`;
+                        })
                         .join(', ');
                     return `## ${category}\n${commandList}`;
                 })
@@ -36,7 +62,17 @@ const help: ICommand = {
             return message.reply({
                 embeds: [{
                     title: "📚 Command List",
-                    description: helpText + "\n\nUse `help <command>` for detailed info",
+                    description: [
+                        helpText,
+                        "",
+                        "**Flag Legend:**",
+                        "👑 Owner Only",
+                        "⚠️ Dangerous",
+                        "🚧 Work in Progress",
+                        "🚫 Disabled",
+                        "",
+                        "Use `help <command>` for detailed info"
+                    ].join("\n"),
                     colour: "#00ff00"
                 }]
             });
@@ -56,13 +92,21 @@ const help: ICommand = {
             });
         }
 
+        const flags = formatFlags(command.flags);
         const commandInfo = [
             `# ${command.name}`,
             command.description,
             '',
             `**Usage:** \`${command.usage || command.name}\``,
             `**Category:** ${command.category || "None"}`,
-            command.aliases?.length ? `**Aliases:** ${command.aliases.map((a: string) => `\`${a}\``).join(', ')}` : null
+            command.aliases?.length ? `**Aliases:** ${command.aliases.map((a: string) => `\`${a}\``).join(', ')}` : null,
+            flags ? `\n**Flags:**\n${flags}` : null,
+            command.permissions ? [
+                "",
+                "**Required Permissions:**",
+                command.permissions.user ? `User: ${command.permissions.user.join(", ")}` : null,
+                command.permissions.bot ? `Bot: ${command.permissions.bot.join(", ")}` : null
+            ].filter(Boolean).join("\n") : null
         ].filter(Boolean).join('\n');
 
         return message.reply({

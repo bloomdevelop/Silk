@@ -4,6 +4,7 @@ const programming_quotes: ICommand = {
     name: "programming_quotes",
     description:
         "Uses [Programming Quotes API](https://programming-quotesapi.vercel.app/) for get random quotes.",
+    category: "Utility",
     usage: "programming_quote",
     aliases: ["p_quote"],
     async execute(msg) {

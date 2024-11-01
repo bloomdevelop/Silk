@@ -7,7 +7,7 @@ const ConfigCommand: ICommand = {
     name: "config",
     description: "Configure bot settings for your server",
     usage: "config <view|set|reset> <key> <value>",
-    category: "admin",
+    category: "System",
 
     async execute(message: Message, args: string[]) {
         const db: DatabaseService = DatabaseService.getInstance();

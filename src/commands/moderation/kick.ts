@@ -5,7 +5,7 @@ const kick: ICommand = {
     name: "kick",
     description: "Kicks a user from the server",
     usage: "kick <userId> <reason>",
-    category: "moderation",
+    category: "Moderation",
     async execute(msg, args) {
         if (!args || args.length < 2) {
             return msg.reply({

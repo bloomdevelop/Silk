@@ -3,9 +3,14 @@ import { commandLogger } from "../../utils/Logger.js";
 
 const ping: ICommand = {
     name: "ping",
-    description: "Check bot and API latency",
+    description: "Check bot's latency",
     usage: "ping",
-    category: "misc",
+    category: "Info",
+    rateLimit: {
+        usages: 3,         // 3 uses
+        duration: 10000,   // per 10 seconds
+        users: new Map()
+    },
     aliases: ["latency", "p"],
     async execute(message) {
         try {
