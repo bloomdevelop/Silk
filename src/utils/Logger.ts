@@ -29,8 +29,3 @@ export class Logger {
 // Export pre-configured loggers
 export const mainLogger = Logger.getInstance().createLogger("Main");
 export const commandLogger = Logger.getInstance().createLogger("Commands");
-
-// Usage example:
-// mainLogger.info("Application started");
-// commandLogger.debug("Command executed");
-// eventLogger.error("Event failed");
