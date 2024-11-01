@@ -1,5 +1,5 @@
-import { ICommand } from "../../types";
-import { commandLogger } from "../../utils";
+import { ICommand } from "../../types.js";
+import { commandLogger } from "../../utils/Logger.js";
 
 const ping: ICommand = {
     name: "ping",
@@ -8,30 +8,54 @@ const ping: ICommand = {
     category: "misc",
     aliases: ["latency", "p"],
     async execute(message) {
-        const startTime = Date.now();
+        try {
+            // Send initial loading message
+            const loadingMsg = await message.reply({
+                embeds: [{
+                    title: "🏓 Pinging...",
+                    description: "Calculating latency...",
+                    colour: "#ffff00"
+                }]
+            });
 
-        // Test Revolt API latency
-        // @ts-expect-error
-        const apiResponse = await fetch("https://api.revolt.chat/");
-        const apiLatency = Date.now() - startTime;
+            if (!loadingMsg) {
+                throw new Error("Failed to send initial message");
+            }
 
-        // Calculate bot latency
-        const botLatency = Date.now() - Number(message.createdAt);
+            const startTime = Date.now();
+            
+            // Test Revolt API latency
+            // @ts-expect-error
+            const apiResponse = await fetch("https://api.revolt.chat/");
+            const apiLatency = Date.now() - startTime;
 
-        commandLogger.info(`Ping command executed. API: ${apiLatency}ms, Bot: ${botLatency}ms`);
+            // Calculate bot latency
+            const botLatency = Date.now() - Number(message.createdAt);
 
-        return message.reply({
-            embeds: [{
-                title: "🏓 Pong!",
-                description: [
-                    "# Latency Information",
-                    `**Bot Latency**: \`${botLatency}ms\``,
-                    `**API Latency**: \`${apiLatency}ms\``,
-                ].join("\n"),
-                colour: "#00ff00"
-            }]
-        });
+            commandLogger.info(`Ping command executed. API: ${apiLatency}ms, Bot: ${botLatency}ms`);
+
+            return loadingMsg.edit({
+                embeds: [{
+                    title: "🏓 Pong!",
+                    description: [
+                        "# Latency Information",
+                        `**Bot Latency**: \`${botLatency}ms\``,
+                        `**API Latency**: \`${apiLatency}ms\``,
+                    ].join("\n"),
+                    colour: "#00ff00"
+                }]
+            });
+        } catch (error) {
+            commandLogger.error("Error in ping command:", error);
+            return message.reply({
+                embeds: [{
+                    title: "Error",
+                    description: "Failed to execute ping command",
+                    colour: "#ff0000"
+                }]
+            });
+        }
     }
 };
 
-module.exports = ping;
+export default ping;

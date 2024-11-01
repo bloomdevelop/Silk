@@ -1,4 +1,4 @@
-import { ICommand } from "../../types";
+import { ICommand } from "../../types.js";
 
 const programming_quotes: ICommand = {
     name: "programming_quotes",
@@ -24,4 +24,4 @@ const programming_quotes: ICommand = {
     },
 };
 
-module.exports = programming_quotes;
+export default programming_quotes;

@@ -53,12 +53,6 @@ export interface IConfiguration {
     };
 }
 
-export interface IEvent {
-    name: string;
-    once?: boolean;
-    execute(...args: any[]): Promise<void>;
-}
-
 export type Events = {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     error(error: any): void;

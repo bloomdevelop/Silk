@@ -1,4 +1,4 @@
-import { ICommand } from "../../types";
+import { ICommand } from "../../types.js";
 
 const warn: ICommand = {
   name: "warn",
@@ -20,4 +20,4 @@ const warn: ICommand = {
   },
 };
 
-module.exports = warn;
+export default warn;

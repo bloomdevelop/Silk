@@ -1,26 +1,41 @@
-import dotenv from "dotenv";
+import { z } from 'zod'
+import { config } from 'dotenv'
+import path from 'path'
+
+const ConfigSchema = z.object({
+  TOKEN: z.string(),
+  PREFIX: z.string().default('!'),
+  DISABLED_PLUGINS: z.string().optional()
+})
 
 export class ConfigService {
-    private startupTime: number;
+  private config: z.infer<typeof ConfigSchema>
 
-    constructor() {
-        this.startupTime = Date.now();
-        dotenv.config();
-    }
+  constructor() {
+    // Load .env file with absolute path
+    config({
+      path: path.resolve(process.cwd(), '.env'),
+      debug: true // This will show us the .env loading process
+    })
 
-    getToken(): string {
-        return process.env.TOKEN!;
-    }
+    console.log('Environment check:', {
+      TOKEN: process.env.TOKEN ? 'Present' : 'Missing',
+      PREFIX: process.env.PREFIX,
+      CWD: process.cwd()
+    })
 
-    getPrefix(): string {
-        return process.env.PREFIX!;
-    }
+    this.config = ConfigSchema.parse(process.env)
+  }
 
-    getStartupTime(): number {
-        return this.startupTime;
-    }
+  getToken(): string {
+    return this.config.TOKEN
+  }
 
-    isValid(): boolean {
-        return Boolean(this.getToken());
-    }
+  getPrefix(): string {
+    return this.config.PREFIX
+  }
+
+  isValid(): boolean {
+    return Boolean(this.config.TOKEN)
+  }
 }

@@ -1,6 +1,6 @@
-import { ICommand } from "../../types";
+import { ICommand } from "../../types.js";
 import { Client, Message } from "revolt.js";
-import { CommandManager } from "../../managers/CommandManager";
+import { CommandManager } from "../../managers/CommandManager.js";
 
 const help: ICommand = {
     name: "help",
@@ -75,4 +75,4 @@ const help: ICommand = {
     }
 };
 
-module.exports = help;
+export default help;

@@ -1,10 +1,10 @@
 import { ICommand } from "../../types.js";
 import { commandLogger } from "../../utils/Logger.js";
 
-const kick: ICommand = {
-    name: "kick",
-    description: "Kicks a user from the server",
-    usage: "kick <userId> <reason>",
+const ban: ICommand = {
+    name: "ban",
+    description: "Bans a user from the server",
+    usage: "ban <userId> <reason>",
     category: "moderation",
     async execute(msg, args) {
         if (!args || args.length < 2) {
@@ -17,13 +17,13 @@ const kick: ICommand = {
             });
         }
 
-        // Check if user has permission to kick (4 = KickMembers)
-        const permissions = msg.member?.server?.havePermission("KickMembers");
+        // Check if user has permission to ban (2 = BanMembers)
+        const permissions = msg.member?.server?.havePermission("BanMembers");
         if (!permissions) {
             return msg.reply({
                 embeds: [{
                     title: "Permission Denied",
-                    description: "You need the Kick Members permission to use this command",
+                    description: "You need the Ban Members permission to use this command",
                     colour: "#ff0000"
                 }]
             });
@@ -41,39 +41,39 @@ const kick: ICommand = {
                 });
             }
 
-            // Check if target is kickable
+            // Check if target is bannable
             if (targetMember.user?.bot) {
                 return msg.reply({
                     embeds: [{
                         title: "Error",
-                        description: "Cannot kick a bot",
+                        description: "Cannot ban a bot",
                         colour: "#ff0000"
                     }]
                 });
             }
 
             const reason = args.slice(1).join(" ");
-            await targetMember.kick();
+            await targetMember.ban({reason: args[1]});
 
-            commandLogger.info(`${msg.author?.username} kicked ${targetMember.user?.username} for: ${reason}`);
+            commandLogger.info(`${msg.author?.username} banned ${targetMember.user?.username} for: ${reason}`);
 
             return msg.reply({
                 embeds: [{
-                    title: "User Kicked",
+                    title: "User Banned",
                     description: [
                         `**User**: ${targetMember.user?.username}`,
                         `**Reason**: ${reason}`,
-                        `**Kicked by**: ${msg.author?.username}`
+                        `**Banned by**: ${msg.author?.username}`
                     ].join("\n"),
                     colour: "#00ff00"
                 }]
             });
         } catch (error) {
-            commandLogger.error("Error executing kick command:", error);
+            commandLogger.error("Error executing ban command:", error);
             return msg.reply({
                 embeds: [{
                     title: "Error",
-                    description: "Failed to kick user. Make sure I have the required permissions.",
+                    description: "Failed to ban user. Make sure I have the required permissions.",
                     colour: "#ff0000"
                 }]
             });
@@ -81,4 +81,4 @@ const kick: ICommand = {
     }
 };
 
-export default kick;
+export default ban; 

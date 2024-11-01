@@ -1,4 +1,4 @@
-import { ICommand } from "../../types";
+import { ICommand } from "../../types.js";
 import { spawnSync } from "node:child_process";
 
 const shell: ICommand = {
@@ -26,4 +26,4 @@ const shell: ICommand = {
     },
 };
 
-module.exports = shell;
+export default shell;
