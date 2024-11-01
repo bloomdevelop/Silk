@@ -1,96 +1,170 @@
-import { ICommand } from "@/types";
-import { commandLog } from "../../utils";
-import fs from "node:fs/promises";
+import { ICommand } from "../../types.js";
+import { commandLogger } from "../../utils/Logger.js";
+import { DatabaseService } from "../../services/DatabaseService.js";
+
+const VOTE_DURATION = 60000; // 60 seconds
+const REQUIRED_VOTES_PERCENTAGE = 0.5; // 50% of online members
 
 const votekick: ICommand = {
     name: "votekick",
-    description:
-        "Starts a votekick for a user with a reason provided",
+    description: "Starts a votekick for a user",
     usage: "votekick <userId> <reason>",
-    wip: true,
+    category: "Moderation",
+
     async execute(msg, args) {
-        let config;
-        try {
-            const data = await fs.readFile(
-                `${msg.server?.id}-config.json`,
-                "utf-8",
-            );
-            config = JSON.parse(data);
-        } catch (err) {
-            return msg.reply({
-                embeds: [
-                    {
-                        title: "Error",
-                        description: "Failed to read config file",
-                        colour: "#ff0000",
-                    },
-                ],
-            });
-        }
-
-        // Now you can use the config object
-        if (config && config.blocked_users) {
-            // Check if the user is in the blocked_users list
-            if (config.blocked_users.includes(msg.author?.id)) {
-                return msg.reply({
-                    embeds: [
-                        {
-                            title: "Votekick",
-                            description:
-                                "You are blocked from using this command.",
-                            colour: "#ff0000",
-                        },
-                    ],
-                });
-            }
-        }
-
         if (!args || args.length < 2) {
             return msg.reply({
-                embeds: [
-                    {
-                        title: "Votekick",
-                        description:
-                            "Please provide a user ID and a reason.",
-                        colour: "#ff0000",
-                    },
-                ],
+                embeds: [{
+                    title: "Invalid Usage",
+                    description: "Please provide a user ID and reason",
+                    colour: "#ff0000"
+                }]
             });
         }
-        let member;
+
         try {
-            member = await msg.server?.getMember(args[0]);
-            msg.reply({
-                embeds: [
-                    {
-                        title: "Votekick",
-                        description:
-                            `A user started a votekick against ${member?.displayName} (${member?.user?.username}#${member?.user?.discriminator})\nReason: ${args[1]}`,
-                        colour: "#ff0000",
-                    },
-                ],
-            })?.then((msg) => {
-                msg.react(":white_check_mark:").catch((err) => {
-                    throw new Error(err); // if it fails, you know what... (Think before you comment it please)
+            const db = DatabaseService.getInstance();
+            const serverConfig = await db.getServerConfig(msg.server?.id);
+
+            // Check if user is blocked
+            if (serverConfig.security.blockedUsers.includes(msg.author?.id || '')) {
+                return msg.reply({
+                    embeds: [{
+                        title: "Access Denied",
+                        description: "You are blocked from using this command",
+                        colour: "#ff0000"
+                    }]
                 });
-                msg.react(":negative_squared_cross_mark:").catch((err) => {
-                    throw new Error(err);
-                });;
+            }
+
+            // Try to fetch the member first
+            let targetMember;
+            try {
+                const members = await msg.server?.fetchMembers();
+                targetMember = members?.members.find(member => {
+                    // Clean up the search term and username for comparison
+                    const searchTerm = args[0].trim();
+                    const username = member.user?.username?.trim();
+                    
+                    return member.id.user === searchTerm || // Exact ID match
+                           (username && username.toLowerCase() === searchTerm.toLowerCase()); // Case-insensitive username match
+                });
+            } catch (error) {
+                commandLogger.error("Error fetching members:", error);
+            }
+
+            if (!targetMember) {
+                return msg.reply({
+                    embeds: [{
+                        title: "Error",
+                        description: "User not found in this server. Please provide a valid user ID or username.",
+                        colour: "#ff0000"
+                    }]
+                });
+            }
+
+            // Check if user is a bot through the user object
+            if (targetMember.user?.bot) {
+                return msg.reply({
+                    embeds: [{
+                        title: "Error",
+                        description: "Cannot votekick a bot",
+                        colour: "#ff0000"
+                    }]
+                });
+            }
+
+            const reason = args.slice(1).join(" ").trim();
+            const voteMessage = await msg.reply({
+                embeds: [{
+                    title: "Votekick Started",
+                    description: [
+                        `A votekick has been started against **${targetMember.user?.username}**`,
+                        `**Reason**: ${reason}`,
+                        `**Started by**: ${msg.author?.username}`,
+                        "\nReact with \u2705 to vote YES",
+                        "React with \u274C to vote NO",
+                        `\nVote ends in ${VOTE_DURATION / 1000} seconds`
+                    ].join("\n"),
+                    colour: "#ffff00"
+                }]
             });
+
+            if (!voteMessage) {
+                throw new Error("Failed to create vote message");
+            }
+
+            await voteMessage.react(encodeURIComponent("\u2705"));
+            await voteMessage.react(encodeURIComponent("\u274C"));
+
+            // Wait for votes
+            await new Promise(resolve => setTimeout(resolve, VOTE_DURATION));
+
+            // Get final vote counts
+            const message = await msg.channel?.fetchMessage(voteMessage.id);
+            if (!message) throw new Error("Could not fetch vote message");
+
+            // Get reactions using Unicode
+            const yesReaction = message.reactions?.get(encodeURIComponent("\u2705"));
+            const noReaction = message.reactions?.get(encodeURIComponent("\u274C"));
+
+            const yesVotes = yesReaction?.size || 0;
+            const noVotes = noReaction?.size || 0;
+
+            // Calculate if votekick passes using members collection size
+            const memberCount: number | undefined = (await msg.server?.fetchMembers())?.members.length;
+            if (!memberCount) throw new Error("Failed to fetch member count");
+            const requiredVotes = Math.ceil(memberCount * REQUIRED_VOTES_PERCENTAGE);
+            const votekickPasses = yesVotes > noVotes && yesVotes >= requiredVotes;
+
+            if (votekickPasses) {
+                try {
+                    await targetMember.kick();
+                    return msg.reply({
+                        embeds: [{
+                            title: "Votekick Successful",
+                            description: [
+                                `**${targetMember.user?.username}** has been kicked`,
+                                `**Final Votes**: Yes: ${yesVotes}, No: ${noVotes} (Total: ${yesVotes + noVotes})`,
+                                `**Reason**: ${reason}`
+                            ].join("\n"),
+                            colour: "#00ff00"
+                        }]
+                    });
+                } catch (error) {
+                    commandLogger.error("Failed to kick user after successful votekick:", error);
+                    return msg.reply({
+                        embeds: [{
+                            title: "Error",
+                            description: "Votekick passed but failed to kick user. Make sure I have the required permissions.",
+                            colour: "#ff0000"
+                        }]
+                    });
+                }
+            } else {
+                return msg.reply({
+                    embeds: [{
+                        title: "Votekick Failed",
+                        description: [
+                            `Not enough votes to kick **${targetMember.user?.username}**`,
+                            `**Final Votes**: Yes: ${yesVotes}, No: ${noVotes} (Total: ${yesVotes + noVotes})`,
+                            `**Required Votes**: ${requiredVotes}`
+                        ].join("\n"),
+                        colour: "#ff0000"
+                    }]
+                });
+            }
         } catch (error) {
-            commandLog.error(`Error getting member: ${error}`);
+            commandLogger.error("Error in votekick command:", error);
             return msg.reply({
-                embeds: [
-                    {
-                        title: "Votekick",
-                        description:
-                            "Error retrieving member information.",
-                        colour: "#ff0000",
-                    },
-                ],
+                embeds: [{
+                    title: "Error",
+                    description: `An error occurred while executing the votekick\n \`\`\`\n${error}\n\`\`\``,
+                    colour: "#ff0000"
+                }]
             });
         }
-    },
+    }
 };
 
-module.exports = votekick;
+export default votekick;

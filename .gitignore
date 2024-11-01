@@ -6,3 +6,5 @@ ecosystem.config.js
 *.service
 debug.log
 *-config.json
+data
+.idea
