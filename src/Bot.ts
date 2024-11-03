@@ -1,4 +1,4 @@
-import { Client, Message, Server } from "revolt.js";
+import { Channel, Client, Message, Server } from "revolt.js";
 import { ConfigService } from "./services/ConfigService.js";
 import { CommandManager } from "./managers/CommandManager.js";
 import { EventManager } from "./managers/EventManager.js";
@@ -78,13 +78,11 @@ export class Bot {
         this.logger.info(`Left server: ${server.name}`);
     }
 
-    private async handleChannelCreate(channel: any) {
+    private async handleChannelCreate(channel: Channel) {
         this.logger.info(`New channel available: #${channel.name}`);
-        // You could add channel-specific initialization here
     }
 
-    private async handleChannelDelete(channel: any) {
+    private async handleChannelDelete(channel: Channel) {
         this.logger.info(`Channel removed: #${channel.name}`);
-        // You could add channel cleanup logic here
     }
 }

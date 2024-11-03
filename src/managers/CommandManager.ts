@@ -1,130 +1,172 @@
-import { Client, Message } from "revolt.js"
-import { ICommand } from "../types.js"
-import { commandLogger } from "../utils/Logger.js"
-import { Logger as TsLogger, ILogObj} from "tslog";
-import fs from "node:fs/promises"
-import path from "node:path"
+import { Client, Message } from "revolt.js";
+import { ICommand } from "../types.js";
+import { readdirSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+import { DatabaseService } from "../services/DatabaseService.js";
 import { RateLimitManager } from "./RateLimitManager.js";
+import { mainLogger } from "../utils/Logger.js";
 
 export class CommandManager {
-    readonly client: Client
-    readonly commands: Map<string, ICommand>
-    private logger: TsLogger<ILogObj>
+    private commands: Map<string, ICommand>;
+    private aliases: Map<string, string>;
+    private client: Client;
+    private db: DatabaseService;
     private rateLimitManager: RateLimitManager;
 
     constructor(client: Client) {
-        this.client = client
-        this.commands = new Map()
-        this.logger = commandLogger
+        this.commands = new Map();
+        this.aliases = new Map();
+        this.client = client;
+        this.db = DatabaseService.getInstance();
         this.rateLimitManager = RateLimitManager.getInstance();
+        mainLogger.info("CommandManager initialized");
     }
 
-    async loadCommands() {
-        this.logger.info("Loading commands...");
-        const commandsPath = path.join(process.cwd(), 'dist', 'commands')
-        const categories = await fs.readdir(commandsPath);
+    async loadCommands(): Promise<void> {
+        try {
+            const __dirname = dirname(fileURLToPath(import.meta.url));
+            const categoriesPath = join(__dirname, "..", "commands");
+            const categories = readdirSync(categoriesPath, { withFileTypes: true })
+                .filter(dirent => dirent.isDirectory())
+                .map(dirent => dirent.name);
 
-        for (const category of categories) {
-            const categoryPath = path.join(commandsPath, category);
-            const stats = await fs.stat(categoryPath);
+            for (const category of categories) {
+                const categoryPath = join(categoriesPath, category);
+                const commandFiles = readdirSync(categoryPath)
+                    .filter(file => file.endsWith(".js"));
 
-            if (!stats.isDirectory())
-                continue;
+                for (const file of commandFiles) {
+                    try {
+                        const commandModule = await import(`file://${join(categoryPath, file)}`);
+                        const command: ICommand = commandModule.default;
 
-            this.logger.info(`Loading category: ${category}`);
-            const files = await fs.readdir(categoryPath);
+                        if (!command.name || !command.execute) {
+                            mainLogger.warn(`Invalid command in file: ${file}`);
+                            continue;
+                        }
 
-            for (const file of files.filter(f => f.endsWith('.js'))) {
-                const loadTime = Date.now();
-                const commandPath = path.resolve(categoryPath, file);
-                const { default: commandModule } = await import(commandPath);
+                        // Register the main command
+                        this.commands.set(command.name.toLowerCase(), command);
 
-                if (!commandModule || !commandModule.name) {
-                    this.logger.warn(`Invalid command module in ${file}`);
-                    continue;
+                        // Register aliases if they exist
+                        if (command.aliases?.length) {
+                            command.aliases.forEach(alias => {
+                                this.aliases.set(alias.toLowerCase(), command.name.toLowerCase());
+                            });
+                        }
+
+                        mainLogger.info(`Loaded command: ${command.name}`);
+                    } catch (error) {
+                        mainLogger.error(`Error loading command file ${file}:`, error);
+                    }
                 }
-                this.commands.set(commandModule.name, commandModule);
-                this.logger.info(`Loaded: ${commandModule.name} (${Date.now() - loadTime}ms)`);
             }
-        }
 
-        this.logger.info(`Successfully loaded ${this.commands.size} commands`);
+            mainLogger.info(`Loaded ${this.commands.size} commands and ${this.aliases.size} aliases`);
+        } catch (error) {
+            mainLogger.error("Error loading commands:", error);
+            throw error;
+        }
     }
 
-    async executeCommand(message: Message, prefix: string) {
-        if (!message.content) return
+    async executeCommand(message: Message, prefix: string): Promise<void> {
+        try {
+            const args = message.content.slice(prefix.length).trim().split(/ +/);
+            const commandName = args.shift()?.toLowerCase();
 
-        // Use a more efficient string splitting approach
-        const content = message.content.slice(prefix.length).trim()
-        if (!content) return
+            if (!commandName) return;
 
-        // Split args only once and store in const
-        const [commandName, ...args] = content.split(/ +/g)
+            // Check if it's a command or alias
+            let command = this.commands.get(commandName);
+            if (!command) {
+                const mainCommandName = this.aliases.get(commandName);
+                if (mainCommandName) {
+                    command = this.commands.get(mainCommandName);
+                }
+            }
 
-        if (!commandName) return
+            if (!command) return;
 
-        const command = this.findCommand(commandName.toLowerCase())
+            // Get server config for permission checks
+            const serverConfig = await this.db.getServerConfig(message.server?.id);
 
-        if (!command) {
-            this.logger.warn(`Command not found: ${commandName}`)
-            await message.reply({
-                embeds: [{
-                    title: "Command Not Found",
-                    description: [
-                        `The command \`${commandName}\` does not exist.`,
-                        `Use \`${prefix}help\` to see all available commands.`
-                    ].join('\n'),
-                    colour: "#ff0000"
-                }]
-            })
-            return
-        }
-
-        // Check rate limit
-        if (command.rateLimit) {
-            const userId = message.author?.id;
-            if (!userId) return;
-
-            if (this.rateLimitManager.isRateLimited(userId, command.rateLimit)) {
-                const remainingTime = Math.ceil(
-                    this.rateLimitManager.getRemainingTime(userId, command.rateLimit) / 1000
-                );
-                
-                return message.reply({
+            // Check if command is disabled
+            if (serverConfig.commands.disabled.includes(command.name)) {
+                await message.reply({
                     embeds: [{
-                        title: "Rate Limited",
-                        description: [
-                            "You are being rate limited!",
-                            `Please wait ${remainingTime} seconds before using this command again.`,
-                            "",
-                            `**Limit**: ${command.rateLimit.usages} uses per ${command.rateLimit.duration / 1000}s`
-                        ].join("\n"),
+                        title: "Command Disabled",
+                        description: "This command is currently disabled on this server.",
                         colour: "#ff0000"
                     }]
                 });
+                return;
             }
-        }
 
-        try {
-            this.logger.info(`Executing ${command.name} with ${args.length} ([${args}]) arguments`)
-            // Pass the pre-split args array
-            await command.execute(message, args, this.client)
+            // Check if user is blocked
+            if (serverConfig.security.blockedUsers.includes(message.author?.id || '')) {
+                await message.reply({
+                    embeds: [{
+                        title: "Access Denied",
+                        description: "You are blocked from using commands.",
+                        colour: "#ff0000"
+                    }]
+                });
+                return;
+            }
+
+            // Check owner-only commands
+            if (command.flags?.ownerOnly && !serverConfig.bot.owners.includes(message.author?.id || '')) {
+                await message.reply({
+                    embeds: [{
+                        title: "Access Denied",
+                        description: "This command is only available to bot owners.",
+                        colour: "#ff0000"
+                    }]
+                });
+                return;
+            }
+
+            // Check rate limits
+            if (command.rateLimit && message.author?.id) {
+                if (this.rateLimitManager.isRateLimited(message.author.id, command.rateLimit)) {
+                    const remainingTime = Math.ceil(
+                        this.rateLimitManager.getRemainingTime(message.author.id, command.rateLimit) / 1000
+                    );
+                    
+                    await message.reply({
+                        embeds: [{
+                            title: "Rate Limited",
+                            description: `Please wait ${remainingTime} seconds before using this command again.`,
+                            colour: "#ff0000"
+                        }]
+                    });
+                    return;
+                }
+            }
+
+            // Execute the command
+            await command.execute(message, args, this.client);
+            mainLogger.debug(`Executed command: ${command.name} by ${message.author?.username}`);
+
         } catch (error) {
-            this.logger.error(`Error executing ${command.name}:`, error)
-            throw error
+            mainLogger.error("Error executing command:", error);
+            await message.reply({
+                embeds: [{
+                    title: "Error",
+                    description: "An error occurred while executing the command.",
+                    colour: "#ff0000"
+                }]
+            });
         }
-    }
-
-    // Optimize command lookup
-    private findCommand(name: string): ICommand | undefined {
-        const command = this.commands.get(name)
-        if (command) return command
-
-        // Only search aliases if direct lookup fails
-        return [...this.commands.values()].find(cmd => cmd.aliases?.includes(name))
     }
 
     getCommands(): Map<string, ICommand> {
-        return this.commands
+        return this.commands;
+    }
+
+    getCommand(name: string): ICommand | undefined {
+        return this.commands.get(name.toLowerCase()) || 
+               this.commands.get(this.aliases.get(name.toLowerCase()) || '');
     }
 }
