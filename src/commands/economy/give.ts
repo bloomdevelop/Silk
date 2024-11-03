@@ -13,7 +13,7 @@ const give: ICommand = {
             return msg.reply({
                 embeds: [{
                     title: "Error",
-                    description: "Please specify a user and amount",
+                    description: "Please specify a user and amount\nUsage: `give <user> <amount>`",
                     colour: "#ff0000"
                 }]
             });
@@ -52,7 +52,7 @@ const give: ICommand = {
             return msg.reply({
                 embeds: [{
                     title: "Error",
-                    description: "You don't have enough money",
+                    description: "You don't have enough money in your wallet",
                     colour: "#ff0000"
                 }]
             });
