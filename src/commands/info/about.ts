@@ -54,6 +54,15 @@ const about: ICommand = {
                 memory: formatMemory(process.memoryUsage().heapUsed)
             };
 
+            // Format dependencies
+            const dependencies = Object.entries(packageJson.dependencies || {})
+                .map(([name, version]) => `**${name}**: ${version}`)
+                .join('\n');
+
+            const devDependencies = Object.entries(packageJson.devDependencies || {})
+                .map(([name, version]) => `**${name}**: ${version}`)
+                .join('\n');
+
             return message.reply({
                 embeds: [{
                     title: "🤖 Bot Information",
@@ -76,8 +85,10 @@ const about: ICommand = {
                         `**Source**: [GitHub](${packageJson.repository?.url || "N/A"})`,
                         "",
                         "# Dependencies",
-                        `**revolt.js**: ${packageJson.dependencies["revolt.js"]}`,
-                        `**TypeScript**: ${packageJson.devDependencies?.typescript || "N/A"}`,
+                        dependencies,
+                        "",
+                        "# Dev Dependencies",
+                        devDependencies,
                         "",
                         "# Environment",
                         `**Platform**: ${process.platform}`,
