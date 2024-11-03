@@ -30,7 +30,7 @@ const ban: ICommand = {
         }
 
         try {
-            const targetMember = msg.server?.getMember(args[0]);
+            const targetMember = msg.channel?.server?.fetchMember(args[0]);
             if (!targetMember) {
                 return msg.reply({
                     embeds: [{
@@ -42,7 +42,7 @@ const ban: ICommand = {
             }
 
             // Check if target is bannable
-            if (targetMember.user?.bot) {
+            if ((await targetMember).user?.bot) {
                 return msg.reply({
                     embeds: [{
                         title: "Error",
@@ -53,15 +53,15 @@ const ban: ICommand = {
             }
 
             const reason = args.slice(1).join(" ");
-            await targetMember.ban({reason: args[1]});
+            await (await targetMember).server?.banUser((await targetMember)._id.user, { reason});
 
-            commandLogger.info(`${msg.author?.username} banned ${targetMember.user?.username} for: ${reason}`);
+            commandLogger.info(`${msg.author?.username} banned ${(await targetMember).user?.username} for: ${reason}`);
 
             return msg.reply({
                 embeds: [{
                     title: "User Banned",
                     description: [
-                        `**User**: ${targetMember.user?.username}`,
+                        `**User**: ${(await targetMember).user?.username}`,
                         `**Reason**: ${reason}`,
                         `**Banned by**: ${msg.author?.username}`
                     ].join("\n"),

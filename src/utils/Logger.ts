@@ -1,17 +1,11 @@
-import { ILogObj, Logger as TsLogger } from "tslog";
+import chalk from "chalk";
 
 export class Logger {
+    private name: string;
     private static instance: Logger;
-    private mainLogger: TsLogger<ILogObj>;
 
     private constructor() {
-        this.mainLogger = new TsLogger({
-            name: "Main",
-            type: "pretty",
-            prettyLogTemplate: "{{yyyy}}-{{mm}}-{{dd}} {{hh}}:{{MM}}:{{ss}} [{{logLevelName}}] {{name}} > ",
-            stylePrettyLogs: true,
-            prettyLogTimeZone: "UTC",
-        });
+        this.name = "Main";
     }
 
     static getInstance(): Logger {
@@ -21,11 +15,44 @@ export class Logger {
         return Logger.instance;
     }
 
-    createLogger(name: string): TsLogger<ILogObj> {
-        return this.mainLogger.getSubLogger({ name });
+    createLogger(name: string): Logger {
+        const logger = new Logger();
+        logger.name = name;
+        return logger;
+    }
+
+    log(level: string, message: string, ...args: any[]): void {
+        console.log(chalk.gray(`[${this.name}] ${level}:`), message, ...args);
+    }
+
+    info(message: string, ...args: any[]): void {
+        console.log(chalk.blue(`[${this.name}] INFO:`), message, ...args);
+    }
+
+    error(message: string, ...args: any[]): void {
+        console.error(chalk.red(`[${this.name}] ERROR:`), message, ...args);
+    }
+
+    warn(message: string, ...args: any[]): void {
+        console.warn(chalk.yellow(`[${this.name}] WARN:`), message, ...args);
+    }
+
+    debug(message: string, ...args: any[]): void {
+        console.debug(chalk.gray(`[${this.name}] DEBUG:`), message, ...args);
+    }
+
+    trace(message: string, ...args: any[]): void {
+        console.debug(chalk.gray(`[${this.name}] TRACE:`), message, ...args);
+    }
+
+    fatal(message: string, ...args: any[]): void {
+        console.error(chalk.red.bold(`[${this.name}] FATAL:`), message, ...args);
+    }
+
+    silly(message: string, ...args: any[]): void {
+        console.log(chalk.magenta(`[${this.name}] SILLY:`), message, ...args);
     }
 }
 
-// Export pre-configured loggers
-export const mainLogger = Logger.getInstance().createLogger("Main");
-export const commandLogger = Logger.getInstance().createLogger("Commands");
+export const mainLogger = Logger.getInstance();
+export const commandLogger = mainLogger.createLogger("Commands");

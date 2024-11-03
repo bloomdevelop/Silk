@@ -20,7 +20,7 @@ const give: ICommand = {
         }
 
         const db = DatabaseService.getInstance();
-        const fromUserId = msg.author?.id;
+        const fromUserId = msg.author?._id;
         if (!fromUserId) return;
 
         // Try to find the target user

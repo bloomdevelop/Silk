@@ -1,6 +1,6 @@
 import { ICommand } from "../../types.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
-import { commandLogger } from "../../utils/Logger.js";
+import { mainLogger } from "../../utils/Logger.js";
 import { Message } from "revolt.js";
 
 const ConfigCommand: ICommand = {
@@ -11,7 +11,7 @@ const ConfigCommand: ICommand = {
 
     async execute(message: Message, args: string[]) {
         const db: DatabaseService = DatabaseService.getInstance();
-        const serverId = message.server?.id;
+        const serverId = message.channel?.server?._id;
 
         if (!serverId) {
             return message.reply({
@@ -179,7 +179,7 @@ const ConfigCommand: ICommand = {
                 }
             }
 
-            commandLogger.info(
+            mainLogger.info(
                 `Updated ${key} for server ${serverId}`,
             );
             return message.reply({

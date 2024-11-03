@@ -1,6 +1,6 @@
 import { ICommand } from "../../types.js";
-import { Client, Message } from "revolt.js";
-import { CommandManager } from "../../managers/CommandManager.js";
+import { Message } from "revolt.js";
+import { Bot } from "../../Bot.js";
 
 const formatFlags = (flags?: { [key: string]: boolean }): string | null => {
     if (!flags || Object.keys(flags).length === 0) return null;
@@ -23,9 +23,11 @@ const help: ICommand = {
     description: "Display information about available commands",
     usage: "help [command]",
     category: "Info",
-    execute: async (message: Message, args: string[], client: Client) => {
-        const commandManager = new CommandManager(client);
-        await commandManager.loadCommands();
+    aliases: ["h", "commands"],
+
+    async execute(message: Message, args: string[]) {
+        const bot = Bot.getInstance();
+        const commandManager = bot.getCommandManager();
         const commands = commandManager.getCommands();
 
         if (!args.length) {
@@ -99,7 +101,7 @@ const help: ICommand = {
             '',
             `**Usage:** \`${command.usage || command.name}\``,
             `**Category:** ${command.category || "None"}`,
-            command.aliases?.length ? `**Aliases:** ${command.aliases.map((a: string) => `\`${a}\``).join(', ')}` : null,
+            command.aliases?.length ? `**Aliases:** ${command.aliases.map(a => `\`${a}\``).join(', ')}` : null,
             flags ? `\n**Flags:**\n${flags}` : null,
             command.permissions ? [
                 "",

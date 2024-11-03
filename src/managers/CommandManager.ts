@@ -3,30 +3,28 @@ import { ICommand } from "../types.js";
 import { readdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { DatabaseService } from "../services/DatabaseService.js";
-import { RateLimitManager } from "./RateLimitManager.js";
-import { mainLogger } from "../utils/Logger.js";
+import { Logger, mainLogger } from "../utils/Logger.js";
 
 export class CommandManager {
     private commands: Map<string, ICommand>;
     private aliases: Map<string, string>;
     private client: Client;
-    private db: DatabaseService;
-    private rateLimitManager: RateLimitManager;
+    private logger: Logger;
 
     constructor(client: Client) {
         this.commands = new Map();
         this.aliases = new Map();
         this.client = client;
-        this.db = DatabaseService.getInstance();
-        this.rateLimitManager = RateLimitManager.getInstance();
-        mainLogger.info("CommandManager initialized");
+        this.logger = mainLogger.createLogger("CommandManager");
     }
 
     async loadCommands(): Promise<void> {
         try {
             const __dirname = dirname(fileURLToPath(import.meta.url));
             const categoriesPath = join(__dirname, "..", "commands");
+            
+            this.logger.debug(`Loading commands from: ${categoriesPath}`);
+
             const categories = readdirSync(categoriesPath, { withFileTypes: true })
                 .filter(dirent => dirent.isDirectory())
                 .map(dirent => dirent.name);
@@ -38,11 +36,14 @@ export class CommandManager {
 
                 for (const file of commandFiles) {
                     try {
-                        const commandModule = await import(`file://${join(categoryPath, file)}`);
+                        const filePath = `file://${join(categoryPath, file)}`;
+                        this.logger.debug(`Loading command from: ${filePath}`);
+
+                        const commandModule = await import(filePath);
                         const command: ICommand = commandModule.default;
 
-                        if (!command.name || !command.execute) {
-                            mainLogger.warn(`Invalid command in file: ${file}`);
+                        if (!command?.name || !command?.execute) {
+                            this.logger.warn(`Invalid command in file: ${file}`);
                             continue;
                         }
 
@@ -56,26 +57,29 @@ export class CommandManager {
                             });
                         }
 
-                        mainLogger.info(`Loaded command: ${command.name}`);
+                        this.logger.info(`Loaded command: ${command.name}`);
                     } catch (error) {
-                        mainLogger.error(`Error loading command file ${file}:`, error);
+                        this.logger.error(`Error loading command file ${file}:`, error);
                     }
                 }
             }
 
-            mainLogger.info(`Loaded ${this.commands.size} commands and ${this.aliases.size} aliases`);
+            this.logger.info(`Loaded ${this.commands.size} commands and ${this.aliases.size} aliases`);
         } catch (error) {
-            mainLogger.error("Error loading commands:", error);
+            this.logger.error("Error loading commands:", error);
             throw error;
         }
     }
 
     async executeCommand(message: Message, prefix: string): Promise<void> {
+        if (!message.content) return;
         try {
             const args = message.content.slice(prefix.length).trim().split(/ +/);
             const commandName = args.shift()?.toLowerCase();
 
             if (!commandName) return;
+
+            this.logger.debug(`Attempting to execute command: ${commandName}`);
 
             // Check if it's a command or alias
             let command = this.commands.get(commandName);
@@ -86,71 +90,17 @@ export class CommandManager {
                 }
             }
 
-            if (!command) return;
-
-            // Get server config for permission checks
-            const serverConfig = await this.db.getServerConfig(message.server?.id);
-
-            // Check if command is disabled
-            if (serverConfig.commands.disabled.includes(command.name)) {
-                await message.reply({
-                    embeds: [{
-                        title: "Command Disabled",
-                        description: "This command is currently disabled on this server.",
-                        colour: "#ff0000"
-                    }]
-                });
+            if (!command) {
+                this.logger.debug(`Command not found: ${commandName}`);
                 return;
-            }
-
-            // Check if user is blocked
-            if (serverConfig.security.blockedUsers.includes(message.author?.id || '')) {
-                await message.reply({
-                    embeds: [{
-                        title: "Access Denied",
-                        description: "You are blocked from using commands.",
-                        colour: "#ff0000"
-                    }]
-                });
-                return;
-            }
-
-            // Check owner-only commands
-            if (command.flags?.ownerOnly && !serverConfig.bot.owners.includes(message.author?.id || '')) {
-                await message.reply({
-                    embeds: [{
-                        title: "Access Denied",
-                        description: "This command is only available to bot owners.",
-                        colour: "#ff0000"
-                    }]
-                });
-                return;
-            }
-
-            // Check rate limits
-            if (command.rateLimit && message.author?.id) {
-                if (this.rateLimitManager.isRateLimited(message.author.id, command.rateLimit)) {
-                    const remainingTime = Math.ceil(
-                        this.rateLimitManager.getRemainingTime(message.author.id, command.rateLimit) / 1000
-                    );
-                    
-                    await message.reply({
-                        embeds: [{
-                            title: "Rate Limited",
-                            description: `Please wait ${remainingTime} seconds before using this command again.`,
-                            colour: "#ff0000"
-                        }]
-                    });
-                    return;
-                }
             }
 
             // Execute the command
             await command.execute(message, args, this.client);
-            mainLogger.debug(`Executed command: ${command.name} by ${message.author?.username}`);
+            this.logger.debug(`Executed command: ${command.name} by ${message.author?.username}`);
 
         } catch (error) {
-            mainLogger.error("Error executing command:", error);
+            this.logger.error("Error executing command:", error);
             await message.reply({
                 embeds: [{
                     title: "Error",
@@ -163,10 +113,5 @@ export class CommandManager {
 
     getCommands(): Map<string, ICommand> {
         return this.commands;
-    }
-
-    getCommand(name: string): ICommand | undefined {
-        return this.commands.get(name.toLowerCase()) || 
-               this.commands.get(this.aliases.get(name.toLowerCase()) || '');
     }
 }

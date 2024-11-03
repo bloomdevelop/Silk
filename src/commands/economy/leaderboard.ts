@@ -1,13 +1,6 @@
 import { ICommand } from "../../types.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
 
-interface LeaderboardRow {
-    user_id: string;
-    balance: number;
-    bank: number;
-    total: number;
-}
-
 const leaderboard: ICommand = {
     name: "leaderboard",
     description: "Show the richest users",
@@ -19,7 +12,6 @@ const leaderboard: ICommand = {
         const db = DatabaseService.getInstance();
         const page = args?.length ? parseInt(args[0]) : 1;
         const perPage = 10;
-        const offset = (page - 1) * perPage;
 
         if (isNaN(page) || page < 1) {
             return msg.reply({
@@ -31,15 +23,7 @@ const leaderboard: ICommand = {
             });
         }
 
-        const stmt = db.prepare<LeaderboardRow[]>(`
-            SELECT user_id, balance, bank,
-                   (balance + bank) as total
-            FROM economy
-            ORDER BY total DESC
-            LIMIT ${perPage} OFFSET ${offset}
-        `);
-
-        const users = stmt.all() as LeaderboardRow[];
+        const users = await db.getLeaderboard(page, perPage);
 
         if (!users.length) {
             return msg.reply({

@@ -1,6 +1,6 @@
 {
     "compilerOptions": {
-        "target": "ESNext",
+        "target": "ES2022",
         "module": "NodeNext",
         "moduleResolution": "NodeNext",
         "allowJs": true,
@@ -22,9 +22,10 @@
         "alwaysStrict": true,
         "declaration": true,
         "sourceMap": true,
-        "incremental": true
+        "incremental": true,
+        "types": ["node"]
     },
-    "include": ["src/**/*"],
+    "include": ["src/**/*", "src/__tests__/**/*"],
     "exclude": ["node_modules", "dist"],
     "ts-node": {
         "transpileOnly": true,
