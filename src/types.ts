@@ -78,3 +78,28 @@ export type Events = {
 
     messageCreate(message: Message): void;
 }
+
+export interface UserEconomy {
+    balance: number;
+    bank: number;
+    inventory: InventoryItem[];
+    lastDaily: number;
+    lastWork: number;
+    workStreak: number;
+}
+
+export interface InventoryItem {
+    id: string;
+    name: string;
+    amount: number;
+    type: "collectable" | "usable" | "rare";
+}
+
+export interface ShopItem {
+    id: string;
+    name: string;
+    description: string;
+    price: number;
+    type: "collectable" | "usable" | "rare";
+    emoji?: string;
+}

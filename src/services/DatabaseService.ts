@@ -1,11 +1,23 @@
 import Database from 'better-sqlite3'
-import { IConfiguration } from "../types.js"
+import { IConfiguration, UserEconomy } from "../types.js"
 import path from "node:path"
 import { mainLogger } from "../utils/Logger.js"
 import fs from "node:fs/promises"
 
 interface DbResult {
     config: string;
+}
+
+interface EconomyRow {
+    user_id: string;
+    balance: number;
+    bank: number;
+    inventory: string;
+    last_daily: number;
+    last_work: number;
+    work_streak: number;
+    created_at: number;
+    updated_at: number;
 }
 
 export class DatabaseService {
@@ -46,6 +58,19 @@ export class DatabaseService {
             CREATE TABLE IF NOT EXISTS server_configs (
                 server_id TEXT PRIMARY KEY,
                 config TEXT NOT NULL
+            )
+        `)
+        this.db.exec(`
+            CREATE TABLE IF NOT EXISTS economy (
+                user_id TEXT PRIMARY KEY,
+                balance INTEGER DEFAULT 0,
+                bank INTEGER DEFAULT 0,
+                inventory TEXT DEFAULT '[]',
+                last_daily INTEGER DEFAULT 0,
+                last_work INTEGER DEFAULT 0,
+                work_streak INTEGER DEFAULT 0,
+                created_at INTEGER DEFAULT (unixepoch()),
+                updated_at INTEGER DEFAULT (unixepoch())
             )
         `)
         this.logger.info('Database schema initialized')
@@ -142,5 +167,65 @@ export class DatabaseService {
 
         await this.updateServerConfig(serverId, defaultConfig, true)
         return defaultConfig
+    }
+
+    async getUserEconomy(userId: string): Promise<UserEconomy> {
+        const stmt = this.db.prepare('SELECT * FROM economy WHERE user_id = ?');
+        const result = stmt.get(userId) as EconomyRow | undefined;
+
+        if (!result) {
+            const defaultEconomy: UserEconomy = {
+                balance: 0,
+                bank: 0,
+                inventory: [],
+                lastDaily: 0,
+                lastWork: 0,
+                workStreak: 0
+            };
+            
+            const insertStmt = this.db.prepare(`
+                INSERT INTO economy (user_id, balance, bank, inventory, last_daily, last_work, work_streak)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            `);
+            
+            insertStmt.run(
+                userId,
+                defaultEconomy.balance,
+                defaultEconomy.bank,
+                JSON.stringify(defaultEconomy.inventory),
+                defaultEconomy.lastDaily,
+                defaultEconomy.lastWork,
+                defaultEconomy.workStreak
+            );
+
+            return defaultEconomy;
+        }
+
+        return {
+            balance: result.balance,
+            bank: result.bank,
+            inventory: JSON.parse(result.inventory),
+            lastDaily: result.last_daily,
+            lastWork: result.last_work,
+            workStreak: result.work_streak
+        };
+    }
+
+    async updateUserEconomy(userId: string, economy: UserEconomy): Promise<void> {
+        const stmt = this.db.prepare(`
+            INSERT OR REPLACE INTO economy (
+                user_id, balance, bank, inventory, last_daily, last_work, work_streak, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
+        `);
+
+        stmt.run(
+            userId,
+            economy.balance,
+            economy.bank,
+            JSON.stringify(economy.inventory),
+            economy.lastDaily,
+            economy.lastWork,
+            economy.workStreak
+        );
     }
 }
