@@ -1,6 +1,5 @@
-# StationBot (Revolt)
-
-The [stationbot](https://github.com/stationarystation/stationbot) port to Revolt.JS that nobody asked for
+# Silk
+The multi-purpose revolt.js bot created using typescript.
 
 ## Steps
 
@@ -10,10 +9,17 @@ I recommend using `degit` to clone the repo. Although if you want updates,
 you can use `git clone`.
 
 ```bash
-git clone https://github.com/stationarystation/revoltjs-template.git my-cool-bot
+# git
+git clone https://github.com/bloomdevelop/Silk.git
 
-# or
-npx degit stationarystation/revoltjs-template my-cool-bot
+# npx
+npx degit bloomdevelop/Silk
+
+# pnpm
+pnpm dlx degit bloomdevelop/Silk
+
+# bun
+bun x degit bloomdevelop/Silk
 ```
 
 ### Installing packages
@@ -29,6 +35,9 @@ Install packages using your package manager of choise
  
  # npm
  npm i
+
+# bun
+bun i
 ```
 
 ### Building
@@ -44,25 +53,46 @@ pnpm build
 
 # yarn
 yarn build
+
+# bun
+bun build
 ```
 
 ### Running
 
 Use the example `.env` file as a base or provide your bot's token through
-environment options.
+environment options by running this command
+```bash
+cp .env.example .env
+```
+
+> To get the bot's token, go to app.revolt.chat and log on your account, then go to Settings > Your Bots.
+> Create a new bot and copy paste your copied bot token into .env file
 
 ```env
 TOKEN=my_cool_bot_token
 ```
 
-Then run `pnpm start` or `npm run start` or `yarn start`
+Then run `pnpm start` or `npm run start` or `yarn start` or `bun start`
+
+> ### For development
+> Please run in the following command:
+> ```bash
+> # npm
+> npm run dev
+> # pnpm
+> pnpm dev
+> # yarn
+> yarn dev
+> # bun
+> bun dev
+> ```
 
 ### Environment Options
 
 These are options that change the bot's settings.
 
-A database driven options menu for stationbot will come soon. But for now
-the bot's settings are managed through a `.env` file or through environment
+The bot's settings are managed through a `.env` file or through environment
 variables.
 
 Below are the available settings and their usage.
