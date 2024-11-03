@@ -1,4 +1,7 @@
 # Silk
+
+> Derived from stationbot which is no longer exist
+
 The multi-purpose revolt.js bot created using typescript.
 
 ## Steps
