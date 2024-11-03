@@ -24,10 +24,10 @@ const votekick: ICommand = {
 
         try {
             const db = DatabaseService.getInstance();
-            const serverConfig = await db.getServerConfig(msg.server?.id);
+            const serverConfig = await db.getServerConfig(msg.channel?.server?._id);
 
             // Check if user is blocked
-            if (serverConfig.security.blockedUsers.includes(msg.author?.id || '')) {
+            if (serverConfig.security.blockedUsers.includes(msg.author?._id || '')) {
                 return msg.reply({
                     embeds: [{
                         title: "Access Denied",
@@ -40,13 +40,13 @@ const votekick: ICommand = {
             // Try to fetch the member first
             let targetMember;
             try {
-                const members = await msg.server?.fetchMembers();
+                const members = await msg.channel?.server?.fetchMembers();
                 targetMember = members?.members.find(member => {
                     // Clean up the search term and username for comparison
                     const searchTerm = args[0].trim();
                     const username = member.user?.username?.trim();
                     
-                    return member.id.user === searchTerm || // Exact ID match
+                    return member._id.user === searchTerm || // Exact ID match
                            (username && username.toLowerCase() === searchTerm.toLowerCase()); // Case-insensitive username match
                 });
             } catch (error) {
@@ -101,7 +101,7 @@ const votekick: ICommand = {
             await new Promise(resolve => setTimeout(resolve, VOTE_DURATION));
 
             // Get final vote counts
-            const message = await msg.channel?.fetchMessage(voteMessage.id);
+            const message = await msg.channel?.fetchMessage(voteMessage._id);
             if (!message) throw new Error("Could not fetch vote message");
 
             // Get reactions using Unicode
@@ -112,7 +112,7 @@ const votekick: ICommand = {
             const noVotes = noReaction?.size || 0;
 
             // Calculate if votekick passes using members collection size
-            const memberCount: number | undefined = (await msg.server?.fetchMembers())?.members.length;
+            const memberCount: number | undefined = (await msg.channel?.server?.fetchMembers())?.members.length;
             if (!memberCount) throw new Error("Failed to fetch member count");
             const requiredVotes = Math.ceil(memberCount * REQUIRED_VOTES_PERCENTAGE);
             const votekickPasses = yesVotes > noVotes && yesVotes >= requiredVotes;

@@ -1,25 +1,81 @@
 import { ICommand } from "../../types.js";
 
 const warn: ICommand = {
-  name: "warn",
-  description: "Warns a user",
-  usage: "warn <userId> <reason>",
-  category: "Moderation",
-  
-  async execute(msg, args) {
-    if (!args || args.length < 2)
-      return msg.reply("Please provide a user id and a reason");
-    const user = msg.server?.getMember(args[0])?.user;
-    if (user?.bot)
-      return msg.reply("This user is a bot! You cannot warn it D:");
-    if (!user) return msg.reply("User not found.");
-    user.openDM().then((dmChannel) => {
-      dmChannel.sendMessage(
-        `You have been warned in ${msg.server?.name} for ${args[1]}`,
-      );
-    });
-    msg.reply(`${user.username} has been warned for ${args[1]}`);
-  },
+    name: "warn",
+    description: "Warns a user",
+    usage: "warn <userId> <reason>",
+    category: "Moderation",
+    
+    async execute(msg, args) {
+        if (!args || args.length < 2) {
+            return msg.reply({
+                embeds: [{
+                    title: "Invalid Usage",
+                    description: "Please provide a user ID and reason",
+                    colour: "#ff0000"
+                }]
+            });
+        }
+
+        const targetMember = await msg.channel?.server?.fetchMember(args[0]);
+        
+        if (!targetMember) {
+            return msg.reply({
+                embeds: [{
+                    title: "Error",
+                    description: "User not found in this server",
+                    colour: "#ff0000"
+                }]
+            });
+        }
+
+        if (targetMember.user?.bot) {
+            return msg.reply({
+                embeds: [{
+                    title: "Error",
+                    description: "Cannot warn a bot",
+                    colour: "#ff0000"
+                }]
+            });
+        }
+
+        const reason = args.slice(1).join(" ");
+
+        try {
+            // Send DM to user if possible
+            const channel = await targetMember.user?.openDM();
+            if (channel) {
+                await channel.sendMessage({
+                    content: `You have been warned in ${msg.channel?.server?.name} for: ${reason}`
+                });
+            }
+
+            return msg.reply({
+                embeds: [{
+                    title: "User Warned",
+                    description: [
+                        `**User**: ${targetMember.user?.username}`,
+                        `**Reason**: ${reason}`,
+                        `**Warned by**: ${msg.author?.username}`
+                    ].join("\n"),
+                    colour: "#00ff00"
+                }]
+            });
+        } catch (error) {
+            // If DM fails, still show warning in channel
+            return msg.reply({
+                embeds: [{
+                    title: "User Warned (Could not DM)",
+                    description: [
+                        `**User**: ${targetMember.user?.username}`,
+                        `**Reason**: ${reason}`,
+                        `**Warned by**: ${msg.author?.username}`
+                    ].join("\n"),
+                    colour: "#00ff00"
+                }]
+            });
+        }
+    }
 };
 
 export default warn;

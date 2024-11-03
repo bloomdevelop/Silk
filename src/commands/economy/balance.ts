@@ -10,7 +10,7 @@ const balance: ICommand = {
     
     async execute(msg, args) {
         const db = DatabaseService.getInstance();
-        const targetId = args[0]?.trim() || msg.author?.id;
+        const targetId = args[0]?.trim() || msg.author?._id;
         
         if (!targetId) {
             return msg.reply({
@@ -23,7 +23,7 @@ const balance: ICommand = {
         }
 
         const economy = await db.getUserEconomy(targetId);
-        const isOwnBalance = targetId === msg.author?.id;
+        const isOwnBalance = targetId === msg.author?._id;
 
         return msg.reply({
             embeds: [{

@@ -26,7 +26,7 @@ const work: ICommand = {
 
     async execute(msg) {
         const db = DatabaseService.getInstance();
-        const userId = msg.author?.id;
+        const userId = msg.author?._id;
 
         if (!userId) return;
 

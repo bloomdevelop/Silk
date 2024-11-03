@@ -20,7 +20,7 @@ const deposit: ICommand = {
         }
 
         const db = DatabaseService.getInstance();
-        const userId = msg.author?.id;
+        const userId = msg.author?._id;
         if (!userId) return;
 
         const economy = await db.getUserEconomy(userId);

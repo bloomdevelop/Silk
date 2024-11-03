@@ -30,7 +30,7 @@ const kick: ICommand = {
         }
 
         try {
-            const targetMember = msg.server?.getMember(args[0]);
+            const targetMember = msg.channel?.server?.fetchMember(args[0]);
             if (!targetMember) {
                 return msg.reply({
                     embeds: [{
@@ -42,7 +42,7 @@ const kick: ICommand = {
             }
 
             // Check if target is kickable
-            if (targetMember.user?.bot) {
+            if ((await targetMember).user?.bot) {
                 return msg.reply({
                     embeds: [{
                         title: "Error",
@@ -53,15 +53,15 @@ const kick: ICommand = {
             }
 
             const reason = args.slice(1).join(" ");
-            await targetMember.kick();
+            await (await targetMember).kick();
 
-            commandLogger.info(`${msg.author?.username} kicked ${targetMember.user?.username} for: ${reason}`);
+            commandLogger.info(`${msg.author?.username} kicked ${(await targetMember).user?.username} for: ${reason}`);
 
             return msg.reply({
                 embeds: [{
                     title: "User Kicked",
                     description: [
-                        `**User**: ${targetMember.user?.username}`,
+                        `**User**: ${(await targetMember).user?.username}`,
                         `**Reason**: ${reason}`,
                         `**Kicked by**: ${msg.author?.username}`
                     ].join("\n"),
