@@ -228,4 +228,8 @@ export class DatabaseService {
             economy.workStreak
         );
     }
+
+    prepare<T extends {} | unknown[]>(sql: string): Database.Statement<T> {
+        return this.db.prepare(sql) as Database.Statement<T>;
+    }
 }
