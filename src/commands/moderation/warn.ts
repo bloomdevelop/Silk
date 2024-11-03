@@ -1,9 +1,11 @@
-import { ICommand } from "@/types";
+import { ICommand } from "../../types.js";
 
 const warn: ICommand = {
   name: "warn",
   description: "Warns a user",
   usage: "warn <userId> <reason>",
+  category: "Moderation",
+  
   async execute(msg, args) {
     if (!args || args.length < 2)
       return msg.reply("Please provide a user id and a reason");
@@ -20,4 +22,4 @@ const warn: ICommand = {
   },
 };
 
-module.exports = warn;
+export default warn;

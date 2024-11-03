@@ -3,9 +3,14 @@
     "version": "1.2.0",
     "description": "Multi-purpose revolt bot",
     "main": "dist/index.js",
+    "type": "module",
+    "repository": {
+        "type": "github",
+        "url": "https://github.com/bloomdevelop/Slik"
+    },
     "scripts": {
-        "build": "rimraf dist && tsc",
-        "start": "node .",
+        "build": "rimraf dist && tsc && cp .env dist/.env",
+        "start": "nodemon .",
         "dev": "rimraf dist && tsc && node ."
     },
     "keywords": [
@@ -18,19 +23,25 @@
     "author": "Bloom Perez",
     "license": "GPLv3",
     "dependencies": {
+        "@libsql/client": "^0.14.0",
         "@types/chroma-js": "^2.4.4",
         "axios": "^1.7.3",
+        "better-sqlite3": "^11.5.0",
+        "chalk": "^5.3.0",
         "chroma-js": "^2.6.0",
         "dayjs": "^1.11.12",
         "dotenv": "^16.4.5",
         "gotiny": "^1.5.5",
         "puppeteer": "^23.2.0",
-        "revolt.js": "7.0.3",
+        "revolt.js": "6.0.20-patch.2",
         "tslog": "^4.9.3",
-        "ulid": "^2.3.0"
+        "ulid": "^2.3.0",
+        "zod": "^3.23.8"
     },
     "devDependencies": {
+        "@types/better-sqlite3": "^7.6.11",
         "@types/node": "^22.2.0",
+        "nodemon": "^3.1.7",
         "prettier": "^3.3.3",
         "rimraf": "^6.0.1",
         "typescript": "^5.5.4"
