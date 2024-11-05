@@ -102,7 +102,7 @@ Below are the available settings and their usage.
 
 
 | Option           | Description      | Usage                              |
-| ---------------- | ---------------- | ---------------------------------- |
+|------------------|------------------|------------------------------------|
 | TOKEN            | Bot's Token      | TOKEN=token                        |
 | PREFIX           | Bot's Prefix     | PREFIX=prefix                      |
 | DISABLED_PLUGINS | Disabled Plugins | DISABLED_PLUGINS=plugin,plugin,... |
