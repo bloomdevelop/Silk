@@ -1,23 +1,66 @@
-import { createClient, Client } from "@libsql/client";
+import { createClient, Client, ResultSet, Value } from "@libsql/client";
 import { mainLogger } from "../utils/Logger.js";
-import { IConfiguration, UserEconomy, TodoItem } from "../types.js";
+import { IConfiguration, UserEconomy, TodoItem, InventoryItem } from "../types.js";
+import { CircuitBreaker } from "../utils/CircuitBreaker.js";
 import { mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
+import process from 'process';
+
+// Define row interfaces with index signatures
+interface ConfigRow extends Record<string, Value> {
+    config: Value;
+}
+
+interface EconomyRow extends Record<string, Value> {
+    user_id: Value;
+    balance: Value;
+    bank: Value;
+    inventory: Value;
+    last_daily: Value;
+    last_work: Value;
+    work_streak: Value;
+}
+
+interface TodoRow extends Record<string, Value> {
+    id: Value;
+    server_id: Value;
+    user_id: Value;
+    content: Value;
+    completed: Value;
+    created_at: Value;
+    updated_at: Value;
+}
 
 export class DatabaseService {
     private static instance: DatabaseService;
     private client: Client;
-    private configCache: Map<string, IConfiguration>;
+    private configCache: Map<string, {
+        data: IConfiguration;
+        timestamp: number;
+    }>;
+    private economyCache: Map<string, {
+        data: UserEconomy;
+        timestamp: number;
+    }>;
+    private dbCircuit: CircuitBreaker;
+    private cleanupInterval?: NodeJS.Timeout;
+    private readonly CACHE_TTL = 300000; // 5 minutes
 
     private constructor() {
         const url = process.env.TURSO_DATABASE_URL || 'file:data/local.db';
         
-        this.client = createClient({
-            url: url
-        });
-        
+        this.client = createClient({ url });
         this.configCache = new Map();
+        this.economyCache = new Map();
+        this.dbCircuit = new CircuitBreaker('Database');
+        
+        // Cleanup cache every 5 minutes
+        this.cleanupInterval = setInterval(() => this.cleanupCache(), this.CACHE_TTL);
+        
+        // Add cleanup handler for process exit
+        this.setupCleanupHandler();
+        
         mainLogger.info(`Database initialized with URL: ${url.startsWith('file:') ? 'local SQLite' : 'Turso'}`);
     }
 
@@ -91,161 +134,66 @@ export class DatabaseService {
         `);
     }
 
+    private async executeQuery<T extends Record<string, Value>>(
+        sql: string, 
+        args: any[] = []
+    ): Promise<ResultSet & { rows: T[] }> {
+        return this.dbCircuit.execute(async () => {
+            const result = await this.client.execute({ sql, args });
+            return result as ResultSet & { rows: T[] };
+        });
+    }
+
     async getServerConfig(serverId: string | undefined): Promise<IConfiguration> {
-        mainLogger.debug(`Fetching config for server: ${serverId}`);
-        if (!serverId) {
-            mainLogger.info('No server ID provided, returning default config');
-            return {
-                commands: { dangerous: [], disabled: [] },
-                features: { experiments: { economy: false, moderation: false } },
-                bot: {
-                    prefix: 's?',
-                    owners: [],
-                    defaultCooldown: 3000
-                },
-                security: {
-                    blockedUsers: [],
-                    allowedServers: []
-                }
-            };
+        // Check cache first
+        const cacheKey = serverId || 'global';
+        const cached = this.configCache.get(cacheKey);
+        if (cached && (Date.now() - cached.timestamp < this.CACHE_TTL)) {
+            mainLogger.debug(`Using cached config for server: ${serverId || 'global'}`);
+            return cached.data;
         }
-
-        if (this.configCache.has(serverId)) {
-            mainLogger.debug(`Config found in cache for server: ${serverId}`);
-            return this.configCache.get(serverId)!;
-        }
-
-        const result = await this.client.execute({
-            sql: "SELECT config FROM server_configs WHERE server_id = ?",
-            args: [serverId]
-        });
-
-        if (result.rows.length) {
-            mainLogger.debug(`Config loaded from database for server: ${serverId}`);
-            const config = JSON.parse(result.rows[0].config as string) as IConfiguration;
-            this.configCache.set(serverId, config);
-            return config;
-        }
-
-        mainLogger.info(`No config found for server: ${serverId}, creating default`);
-        return this.createDefaultConfig(serverId);
-    }
-
-    async getUserEconomy(userId: string): Promise<UserEconomy> {
-        const result = await this.client.execute({
-            sql: "SELECT * FROM economy WHERE user_id = ?",
-            args: [userId]
-        });
-
-        if (!result.rows.length) {
-            const defaultEconomy: UserEconomy = {
-                balance: 0,
-                bank: 0,
-                inventory: [],
-                lastDaily: 0,
-                lastWork: 0,
-                workStreak: 0
-            };
-            
-            await this.client.execute({
-                sql: `
-                    INSERT INTO economy (
-                        user_id, balance, bank, inventory, 
-                        last_daily, last_work, work_streak
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                `,
-                args: [
-                    userId,
-                    defaultEconomy.balance,
-                    defaultEconomy.bank,
-                    JSON.stringify(defaultEconomy.inventory),
-                    defaultEconomy.lastDaily,
-                    defaultEconomy.lastWork,
-                    defaultEconomy.workStreak
-                ]
-            });
-
-            return defaultEconomy;
-        }
-
-        const row = result.rows[0];
-        return {
-            balance: Number(row.balance),
-            bank: Number(row.bank),
-            inventory: JSON.parse(row.inventory as string),
-            lastDaily: Number(row.last_daily),
-            lastWork: Number(row.last_work),
-            workStreak: Number(row.work_streak)
-        };
-    }
-
-    async updateUserEconomy(userId: string, economy: UserEconomy): Promise<void> {
-        await this.client.execute({
-            sql: `
-                INSERT OR REPLACE INTO economy (
-                    user_id, balance, bank, inventory, 
-                    last_daily, last_work, work_streak, 
-                    updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
-            `,
-            args: [
-                userId,
-                economy.balance,
-                economy.bank,
-                JSON.stringify(economy.inventory),
-                economy.lastDaily,
-                economy.lastWork,
-                economy.workStreak
-            ]
-        });
-    }
-
-    async updateServerConfig(serverId: string | undefined, config: IConfiguration): Promise<void> {
-        if (!serverId) {
-            // Handle global config updates
-            const globalConfig = await this.getServerConfig(undefined);
-            const newConfig = {
-                ...globalConfig,
-                ...config,
-                bot: { ...globalConfig.bot, ...config.bot },
-                commands: { ...globalConfig.commands, ...config.commands },
-                features: { ...globalConfig.features, ...config.features },
-                security: { ...globalConfig.security, ...config.security }
-            };
-            
-            // Store the global config in memory only
-            this.configCache.set('global', newConfig);
-            return;
-        }
-
-        mainLogger.debug(`Updating config for server: ${serverId}`);
-
-        let newConfig: IConfiguration;
-        if (!serverId) {
-            newConfig = config as IConfiguration;
-        } else {
-            const currentConfig = await this.getServerConfig(serverId);
-            newConfig = { ...currentConfig, ...config };
-        }
-
-        const configString = JSON.stringify(newConfig);
 
         try {
-            await this.client.execute({
-                sql: "INSERT OR REPLACE INTO server_configs (server_id, config) VALUES (?, ?)",
-                args: [serverId, configString]
-            });
-            this.configCache.set(serverId, newConfig);
-            mainLogger.info(`Successfully updated config for server: ${serverId}`);
+            // For undefined serverId, return default config without saving
+            if (!serverId) {
+                const defaultConfig = this.getDefaultConfig();
+                this.configCache.set('global', {
+                    data: defaultConfig,
+                    timestamp: Date.now()
+                });
+                return defaultConfig;
+            }
+
+            const result = await this.executeQuery<ConfigRow>(
+                "SELECT config FROM configs WHERE server_id = ?",
+                [serverId]
+            );
+
+            if (result.rows.length) {
+                const configStr = result.rows[0].config?.toString();
+                if (!configStr) throw new Error("Invalid config data");
+                
+                const config = JSON.parse(configStr) as IConfiguration;
+                // Update cache
+                this.configCache.set(serverId, {
+                    data: config,
+                    timestamp: Date.now()
+                });
+                return config;
+            }
+
+            // If no config exists, create default
+            mainLogger.info(`No config found for server: ${serverId}, creating default`);
+            const defaultConfig = await this.createDefaultConfig(serverId);
+            return defaultConfig;
         } catch (error) {
-            mainLogger.error(`Failed to update config for server: ${serverId}`, error);
+            mainLogger.error(`Error getting server config: ${error}`);
             throw error;
         }
     }
 
-    async createDefaultConfig(serverId: string): Promise<IConfiguration> {
-        mainLogger.info(`Creating default config for server: ${serverId}`);
-        const defaultConfig: IConfiguration = {
+    private getDefaultConfig(): IConfiguration {
+        return {
             bot: {
                 prefix: 's?',
                 owners: [],
@@ -266,54 +214,150 @@ export class DatabaseService {
                 allowedServers: []
             }
         };
+    }
 
-        await this.updateServerConfig(serverId, defaultConfig);
-        return defaultConfig;
+    async getUserEconomy(userId: string): Promise<UserEconomy> {
+        const result = await this.executeQuery<EconomyRow>(
+            "SELECT *, (balance + bank) as total FROM economy WHERE user_id = ?",
+            [userId]
+        );
+
+        if (!result.rows.length) {
+            return {
+                user_id: userId,
+                balance: 0,
+                bank: 0,
+                inventory: [],
+                lastDaily: 0,
+                lastWork: 0,
+                workStreak: 0,
+                total: 0
+            };
+        }
+
+        const row = result.rows[0];
+        const inventoryStr = row.inventory?.toString() || '[]';
+        const inventory = JSON.parse(inventoryStr) as InventoryItem[];
+
+        const economy: UserEconomy = {
+            user_id: userId,
+            balance: Number(row.balance),
+            bank: Number(row.bank),
+            inventory,
+            lastDaily: Number(row.last_daily),
+            lastWork: Number(row.last_work),
+            workStreak: Number(row.work_streak),
+            total: Number(row.balance) + Number(row.bank)
+        };
+
+        this.economyCache.set(userId, {
+            data: economy,
+            timestamp: Date.now()
+        });
+
+        return economy;
+    }
+
+    async updateUserEconomy(userId: string, economy: UserEconomy): Promise<void> {
+        await this.executeQuery(
+            `
+                INSERT OR REPLACE INTO economy (
+                    user_id, balance, bank, inventory, 
+                    last_daily, last_work, work_streak, 
+                    updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
+            `,
+            [
+                userId,
+                economy.balance,
+                economy.bank,
+                JSON.stringify(economy.inventory),
+                economy.lastDaily,
+                economy.lastWork,
+                economy.workStreak
+            ]
+        );
+    }
+
+    async updateServerConfig(serverId: string | undefined, config: IConfiguration): Promise<void> {
+        const cacheKey = serverId || 'global';
+        
+        try {
+            await this.executeQuery(
+                "INSERT OR REPLACE INTO configs (server_id, config) VALUES (?, ?)",
+                [serverId, JSON.stringify(config)]
+            );
+
+            // Update cache
+            this.configCache.set(cacheKey, {
+                data: config,
+                timestamp: Date.now()
+            });
+
+            mainLogger.debug(`Updated config for server: ${serverId}`);
+        } catch (error) {
+            mainLogger.error(`Error updating server config: ${error}`);
+            throw error;
+        }
+    }
+
+    async createDefaultConfig(serverId: string): Promise<IConfiguration> {
+        const defaultConfig = this.getDefaultConfig();
+
+        try {
+            await this.executeQuery(
+                "INSERT INTO configs (server_id, config) VALUES (?, ?)",
+                [serverId, JSON.stringify(defaultConfig)]
+            );
+
+            // Update cache
+            this.configCache.set(serverId, {
+                data: defaultConfig,
+                timestamp: Date.now()
+            });
+
+            mainLogger.info(`Created default config for server: ${serverId}`);
+            return defaultConfig;
+        } catch (error) {
+            mainLogger.error(`Error creating default config: ${error}`);
+            throw error;
+        }
     }
 
     // For leaderboard command
-    async getLeaderboard(page: number, limit: number): Promise<Array<{
-        user_id: string;
-        balance: number;
-        bank: number;
-        total: number;
-    }>> {
-        const offset = (page - 1) * limit;
-        const result = await this.client.execute({
-            sql: `
-                SELECT user_id, balance, bank,
-                       (balance + bank) as total
-                FROM economy
-                ORDER BY total DESC
-                LIMIT ? OFFSET ?
-            `,
-            args: [limit, offset]
-        });
+    async getLeaderboard(page: number, limit: number): Promise<UserEconomy[]> {
+        const result = await this.executeQuery<EconomyRow>(
+            `SELECT *, (balance + bank) as total 
+             FROM economy 
+             ORDER BY (balance + bank) DESC 
+             LIMIT ? OFFSET ?`,
+            [limit, (page - 1) * limit]
+        );
 
         return result.rows.map(row => ({
-            user_id: row.user_id as string,
+            user_id: row.user_id?.toString() || '',
             balance: Number(row.balance),
             bank: Number(row.bank),
-            total: Number(row.total)
+            inventory: JSON.parse(row.inventory?.toString() || '[]'),
+            lastDaily: Number(row.last_daily),
+            lastWork: Number(row.last_work),
+            workStreak: Number(row.work_streak),
+            total: Number(row.balance) + Number(row.bank)
         }));
     }
 
     // Todo Methods
     async getTodos(serverId: string): Promise<TodoItem[]> {
-        const result = await this.client.execute({
-            sql: `
-                SELECT * FROM todos 
-                WHERE server_id = ?
-                ORDER BY completed ASC, created_at DESC
-            `,
-            args: [serverId]
-        });
+        const result = await this.executeQuery<TodoRow>(
+            `SELECT * FROM todos WHERE server_id = ? ORDER BY completed ASC, created_at DESC`,
+            [serverId]
+        );
 
         return result.rows.map(row => ({
             id: Number(row.id),
-            server_id: row.server_id as string,
-            user_id: row.user_id as string,
-            content: row.content as string,
+            server_id: row.server_id?.toString() || '',
+            user_id: row.user_id?.toString() || '',
+            content: row.content?.toString() || '',
             completed: Boolean(row.completed),
             created_at: Number(row.created_at),
             updated_at: Number(row.updated_at)
@@ -322,21 +366,21 @@ export class DatabaseService {
 
     async createTodo(serverId: string, userId: string, content: string): Promise<TodoItem> {
         const now = Date.now();
-        const result = await this.client.execute({
-            sql: `
+        const result = await this.executeQuery(
+            `
                 INSERT INTO todos (server_id, user_id, content, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?)
                 RETURNING *
             `,
-            args: [serverId, userId, content, now, now]
-        });
+            [serverId, userId, content, now, now]
+        );
 
         const row = result.rows[0];
         return {
             id: Number(row.id),
-            server_id: row.server_id as string,
-            user_id: row.user_id as string,
-            content: row.content as string,
+            server_id: row.server_id?.toString() || '',
+            user_id: row.user_id?.toString() || '',
+            content: row.content?.toString() || '',
             completed: Boolean(row.completed),
             created_at: Number(row.created_at),
             updated_at: Number(row.updated_at)
@@ -344,42 +388,128 @@ export class DatabaseService {
     }
 
     async updateTodo(todoId: number, serverId: string, content: string): Promise<boolean> {
-        const result = await this.client.execute({
-            sql: `
-                UPDATE todos 
-                SET content = ?, updated_at = ?
-                WHERE id = ? AND server_id = ?
-            `,
-            args: [content, Date.now(), todoId, serverId]
-        });
-        return result.rowsAffected > 0;
+        return this.executeModification(
+            `UPDATE todos SET content = ?, updated_at = ? WHERE id = ? AND server_id = ?`,
+            [content, Date.now(), todoId, serverId]
+        );
     }
 
     async toggleTodo(todoId: number, serverId: string): Promise<boolean> {
-        const result = await this.client.execute({
-            sql: `
-                UPDATE todos 
-                SET completed = NOT completed, updated_at = ?
-                WHERE id = ? AND server_id = ?
-            `,
-            args: [Date.now(), todoId, serverId]
-        });
-        return result.rowsAffected > 0;
+        return this.executeModification(
+            `UPDATE todos SET completed = NOT completed, updated_at = ? WHERE id = ? AND server_id = ?`,
+            [Date.now(), todoId, serverId]
+        );
     }
 
     async removeTodo(todoId: number, serverId: string): Promise<boolean> {
-        const result = await this.client.execute({
-            sql: 'DELETE FROM todos WHERE id = ? AND server_id = ?',
-            args: [todoId, serverId]
-        });
-        return result.rowsAffected > 0;
+        return this.executeModification(
+            'DELETE FROM todos WHERE id = ? AND server_id = ?',
+            [todoId, serverId]
+        );
     }
 
     async removeAllTodos(serverId: string): Promise<number> {
-        const result = await this.client.execute({
-            sql: 'DELETE FROM todos WHERE server_id = ?',
-            args: [serverId]
-        });
+        const result = await this.executeQuery<Record<string, Value>>(
+            'DELETE FROM todos WHERE server_id = ?',
+            [serverId]
+        );
         return result.rowsAffected;
+    }
+
+    // Add batch operations for performance
+    async batchUpdateEconomy(updates: Array<{ userId: string, economy: UserEconomy }>): Promise<void> {
+        const values = updates.map(update => [
+            update.userId,
+            update.economy.balance,
+            update.economy.bank,
+            JSON.stringify(update.economy.inventory),
+            update.economy.lastDaily,
+            update.economy.lastWork,
+            update.economy.workStreak,
+            Date.now()
+        ]).flat();
+
+        const placeholders = updates.map(() => "(?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
+
+        await this.executeQuery(
+            `
+                INSERT OR REPLACE INTO economy (
+                    user_id, balance, bank, inventory, 
+                    last_daily, last_work, work_streak, 
+                    updated_at
+                ) VALUES ${placeholders}
+            `,
+            values
+        );
+
+        // Update cache
+        updates.forEach(update => {
+            this.economyCache.set(update.userId, {
+                data: update.economy,
+                timestamp: Date.now()
+            });
+        });
+    }
+
+    private cleanupCache(): void {
+        const now = Date.now();
+        
+        // Cleanup config cache
+        for (const [key, value] of this.configCache.entries()) {
+            if (now - value.timestamp > this.CACHE_TTL) {
+                this.configCache.delete(key);
+            }
+        }
+
+        // Cleanup economy cache
+        for (const [key, value] of this.economyCache.entries()) {
+            if (now - value.timestamp > this.CACHE_TTL) {
+                this.economyCache.delete(key);
+            }
+        }
+
+        // Log cleanup results
+        mainLogger.debug('Cache cleanup completed');
+    }
+
+    public destroy(): void {
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = undefined;
+        }
+        this.configCache.clear();
+        this.economyCache.clear();
+        this.dbCircuit.destroy();
+    }
+
+    // For methods returning rowsAffected
+    private async executeModification(sql: string, args: any[] = []): Promise<boolean> {
+        const result = await this.executeQuery<Record<string, Value>>(sql, args);
+        return result.rowsAffected > 0;
+    }
+
+    private async setupCleanupHandler(): Promise<void> {
+        // Handle normal exit and errors
+        const cleanup = () => {
+            this.destroy();
+            mainLogger.info('Database service cleaned up successfully');
+        };
+
+        process.on('SIGINT', cleanup);
+        process.on('SIGTERM', cleanup);
+        process.on('exit', cleanup);
+
+        // Handle uncaught errors
+        process.on('uncaughtException', (error) => {
+            mainLogger.error('Uncaught exception:', error);
+            cleanup();
+            process.exit(1);
+        });
+
+        process.on('unhandledRejection', (reason) => {
+            mainLogger.error('Unhandled rejection:', reason);
+            cleanup();
+            process.exit(1);
+        });
     }
 }

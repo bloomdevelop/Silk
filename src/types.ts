@@ -80,12 +80,14 @@ export type Events = {
 }
 
 export interface UserEconomy {
+    user_id: string;
     balance: number;
     bank: number;
     inventory: InventoryItem[];
     lastDaily: number;
     lastWork: number;
     workStreak: number;
+    total: number;
 }
 
 export interface InventoryItem {

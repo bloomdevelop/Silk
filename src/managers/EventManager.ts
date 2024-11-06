@@ -9,12 +9,14 @@ export class EventManager {
     private commandManager: CommandManager;
     private db: DatabaseService;
     private logger: Logger;
+    private prefixCache: Map<string, { prefix: string, timestamp: number }>;
 
     constructor(client: Client, commandManager: CommandManager) {
         this.client = client;
         this.commandManager = commandManager;
         this.db = DatabaseService.getInstance();
         this.logger = mainLogger.createLogger("EventManager");
+        this.prefixCache = new Map();
     }
 
     async registerEvents(): Promise<void> {
@@ -26,9 +28,21 @@ export class EventManager {
                     return;
                 }
 
-                // Get server config for prefix
-                const serverConfig = await this.db.getServerConfig(message.channel?.server?._id);
-                const prefix = serverConfig.bot.prefix;
+                const serverId = message.channel?.server?._id;
+                let prefix: string;
+
+                // Check prefix cache (5 minute TTL)
+                const cached = this.prefixCache.get(serverId || 'default');
+                if (cached && (Date.now() - cached.timestamp) < 300000) {
+                    prefix = cached.prefix;
+                } else {
+                    const serverConfig = await this.db.getServerConfig(serverId);
+                    prefix = serverConfig.bot.prefix;
+                    this.prefixCache.set(serverId || 'default', {
+                        prefix,
+                        timestamp: Date.now()
+                    });
+                }
 
                 // Check if message starts with prefix
                 if (!message.content?.startsWith(prefix)) {

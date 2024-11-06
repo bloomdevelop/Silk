@@ -11,18 +11,59 @@ export class CommandManager {
     private aliases: Map<string, string>;
     private client: Client;
     private logger: Logger;
+    private commandCache: Map<string, {
+        module: any;
+        timestamp: number;
+    }>;
+    private cleanupInterval: NodeJS.Timeout | null = null;
+    private readonly CACHE_TTL = 300000; // 5 minutes
 
     constructor(client: Client) {
         this.commands = new Map();
         this.aliases = new Map();
         this.client = client;
         this.logger = mainLogger.createLogger("CommandManager");
+        this.commandCache = new Map();
+
+        this.cleanupInterval = setInterval(() => this.cleanupCache(), this.CACHE_TTL);
+    }
+
+    private cleanupCache(): void {
+        const now = Date.now();
+        for (const [key, value] of this.commandCache.entries()) {
+            if (now - value.timestamp > this.CACHE_TTL) {
+                this.commandCache.delete(key);
+            }
+        }
+    }
+
+    public destroy(): void {
+        if (this.cleanupInterval) {
+            clearInterval(this.cleanupInterval);
+            this.cleanupInterval = null;
+        }
+        this.commands.clear();
+        this.aliases.clear();
+        this.commandCache.clear();
     }
 
     private async loadCommand(filePath: string): Promise<void> {
         const getLoadTime = measureTime();
         try {
+            // Check if module is cached and not older than 5 minutes
+            const cached = this.commandCache.get(filePath);
+            if (cached && (Date.now() - cached.timestamp) < 300000) {
+                const command = cached.module.default;
+                this.commands.set(command.name.toLowerCase(), command);
+                return;
+            }
+
             const commandModule = await import(filePath);
+            this.commandCache.set(filePath, {
+                module: commandModule,
+                timestamp: Date.now()
+            });
+
             const command: ICommand = commandModule.default;
 
             if (!command?.name || !command?.execute) {
