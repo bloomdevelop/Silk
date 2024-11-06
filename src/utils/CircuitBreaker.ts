@@ -1,4 +1,4 @@
-import { Logger, mainLogger } from "./Logger.js";
+import { Logger } from "./Logger.js";
 
 export enum CircuitState {
     CLOSED = 'CLOSED',     // Normal operation
@@ -20,7 +20,7 @@ export class CircuitBreaker {
         private readonly resetTimeoutMs: number = 60000,
         private readonly testCalls: number = 3
     ) {
-        this.logger = mainLogger.createLogger(`CircuitBreaker:${name}`);
+        this.logger = Logger.getInstance(`CircuitBreaker: ${name}`);
     }
 
     async execute<T>(fn: () => Promise<T>): Promise<T> {
@@ -94,15 +94,14 @@ export class CircuitBreaker {
     }
 
     private scheduleReset(): void {
-        if (this.resetTimeout) {
-            clearTimeout(this.resetTimeout);
-        }
+        this.destroy();
         
         this.resetTimeout = setTimeout(() => {
             if (this.state === CircuitState.OPEN) {
                 this.state = CircuitState.HALF_OPEN;
                 this.logger.debug(`Circuit ${this.name} entering half-open state`);
             }
+            this.resetTimeout = null;
         }, this.resetTimeoutMs);
     }
 

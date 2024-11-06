@@ -1,4 +1,5 @@
 import { Client, Message } from "revolt.js";
+import { Logger } from "./utils/Logger.js";
 
 export type Category = "Moderation" | "Economy" | "System" | "Utility" | "Fun" | "Info" | "Hidden";
 
@@ -37,6 +38,7 @@ export interface ICommand {
         ownerOnly?: boolean;
         dangerous?: boolean;
     };
+    logger?: Logger;
     execute(
         message: Message,
         args: string[],

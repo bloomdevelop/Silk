@@ -1,5 +1,5 @@
 import { ICommand } from "../../types.js";
-import { commandLogger } from "../../utils/Logger.js";
+import { mainLogger } from "../../utils/Logger.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
 
 const VOTE_DURATION = 60000; // 60 seconds
@@ -50,7 +50,7 @@ const votekick: ICommand = {
                            (username && username.toLowerCase() === searchTerm.toLowerCase()); // Case-insensitive username match
                 });
             } catch (error) {
-                commandLogger.error("Error fetching members:", error);
+                mainLogger.error("Error fetching members:", error);
             }
 
             if (!targetMember) {
@@ -94,11 +94,24 @@ const votekick: ICommand = {
                 throw new Error("Failed to create vote message");
             }
 
-            await voteMessage.react(encodeURIComponent("\u2705"));
-            await voteMessage.react(encodeURIComponent("\u274C"));
+            // Add reactions with error handling
+            try {
+                await Promise.all([
+                    voteMessage.react(encodeURIComponent("\u2705")),
+                    voteMessage.react(encodeURIComponent("\u274C"))
+                ]);
+            } catch (error) {
+                mainLogger.error("Failed to add vote reactions:", error);
+                await msg.reply("Failed to start vote due to reaction error");
+                return;
+            }
 
-            // Wait for votes
-            await new Promise(resolve => setTimeout(resolve, VOTE_DURATION));
+            // Wait for votes with timeout
+            await Promise.race([
+                new Promise(resolve => setTimeout(resolve, VOTE_DURATION)),
+                new Promise((_, reject) => setTimeout(() => 
+                    reject(new Error("Vote timed out")), VOTE_DURATION + 1000))
+            ]);
 
             // Get final vote counts
             const message = await msg.channel?.fetchMessage(voteMessage._id);
@@ -132,7 +145,7 @@ const votekick: ICommand = {
                         }]
                     });
                 } catch (error) {
-                    commandLogger.error("Failed to kick user after successful votekick:", error);
+                    mainLogger.error("Failed to kick user after successful votekick:", error);
                     return msg.reply({
                         embeds: [{
                             title: "Error",
@@ -155,7 +168,7 @@ const votekick: ICommand = {
                 });
             }
         } catch (error) {
-            commandLogger.error("Error in votekick command:", error);
+            mainLogger.error("Error in votekick command:", error);
             return msg.reply({
                 embeds: [{
                     title: "Error",

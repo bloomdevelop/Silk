@@ -1,58 +1,42 @@
-import chalk from "chalk";
+type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export class Logger {
-    private name: string;
     private static instance: Logger;
+    private context: string;
 
-    private constructor() {
-        this.name = "Main";
+    private constructor(context: string) {
+        this.context = context;
     }
 
-    static getInstance(): Logger {
+    static getInstance(context: string = 'default'): Logger {
         if (!Logger.instance) {
-            Logger.instance = new Logger();
+            Logger.instance = new Logger(context);
         }
         return Logger.instance;
     }
 
-    createLogger(name: string): Logger {
-        const logger = new Logger();
-        logger.name = name;
-        return logger;
-    }
-
-    log(level: string, message: string, ...args: any[]): void {
-        console.log(chalk.gray(`[${this.name}] ${level}:`), message, ...args);
-    }
-
-    info(message: string, ...args: any[]): void {
-        console.log(chalk.blue(`[${this.name}] INFO:`), message, ...args);
-    }
-
-    error(message: string, ...args: any[]): void {
-        console.error(chalk.red(`[${this.name}] ERROR:`), message, ...args);
-    }
-
-    warn(message: string, ...args: any[]): void {
-        console.warn(chalk.yellow(`[${this.name}] WARN:`), message, ...args);
+    private formatMessage(level: LogLevel, message: string, ...args: any[]): string {
+        const timestamp = new Date().toISOString();
+        return `[${timestamp}] [${level.toUpperCase()}] [${this.context}] ${message} ${args.length ? JSON.stringify(args) : ''}`;
     }
 
     debug(message: string, ...args: any[]): void {
-        console.debug(chalk.gray(`[${this.name}] DEBUG:`), message, ...args);
+        console.debug(this.formatMessage('debug', message, ...args));
     }
 
-    trace(message: string, ...args: any[]): void {
-        console.debug(chalk.gray(`[${this.name}] TRACE:`), message, ...args);
+    info(message: string, ...args: any[]): void {
+        console.info(this.formatMessage('info', message, ...args));
     }
 
-    fatal(message: string, ...args: any[]): void {
-        console.error(chalk.red.bold(`[${this.name}] FATAL:`), message, ...args);
+    warn(message: string, ...args: any[]): void {
+        console.warn(this.formatMessage('warn', message, ...args));
     }
 
-    silly(message: string, ...args: any[]): void {
-        console.log(chalk.magenta(`[${this.name}] SILLY:`), message, ...args);
+    error(message: string, ...args: any[]): void {
+        console.error(this.formatMessage('error', message, ...args));
     }
 }
 
-export const mainLogger = Logger.getInstance();
-export const commandLogger = mainLogger.createLogger("Commands");
+// Create and export a main logger instance
+export const mainLogger = Logger.getInstance('Main');
+export const commandLogger = Logger.getInstance('Command');

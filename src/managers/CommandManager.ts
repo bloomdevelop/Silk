@@ -3,7 +3,7 @@ import { ICommand } from "../types.js";
 import { readdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { Logger, mainLogger } from "../utils/Logger.js";
+import { commandLogger, Logger, mainLogger } from "../utils/Logger.js";
 import { formatDuration, measureTime } from "../utils/TimeUtils.js";
 import { ProcessManager } from "../utils/ProcessManager.js";
 
@@ -20,6 +20,8 @@ export class CommandManager {
     private cleanupInterval: NodeJS.Timeout | null = null;
     private readonly CACHE_TTL = 300000; // 5 minutes
     private isInitialized: boolean = false;
+    private executedCommands = new Set<string>();
+    private readonly EXECUTION_TRACKING_TTL = 5000; // 5 seconds
 
     private constructor(client: Client) {
         if (!client) {
@@ -29,7 +31,7 @@ export class CommandManager {
         this.commands = new Map();
         this.aliases = new Map();
         this.client = client;
-        this.logger = mainLogger.createLogger("CommandManager");
+        this.logger = commandLogger;
         this.commandCache = new Map();
 
         this.cleanupInterval = setInterval(() => this.cleanupCache(), this.CACHE_TTL);
@@ -68,6 +70,7 @@ export class CommandManager {
         this.commands.clear();
         this.aliases.clear();
         this.commandCache.clear();
+        this.executedCommands.clear();
     }
 
     private async loadCommand(filePath: string): Promise<void> {
@@ -189,42 +192,55 @@ export class CommandManager {
     }
 
     async executeCommand(message: Message, prefix: string): Promise<void> {
-        if (!message.content) return;
+        if (!message?.content?.trim()) {
+            this.logger.debug('Skipping empty message');
+            return;
+        }
+        
         try {
-            const args = message.content.slice(prefix.length).trim().split(/ +/);
+            const content = message.content.trim();
+            if (!content.startsWith(prefix)) {
+                return;
+            }
+
+            const args = content.slice(prefix.length).trim().split(/ +/);
             const commandName = args.shift()?.toLowerCase();
 
-            if (!commandName) return;
-
-            this.logger.debug(`Attempting to execute command: ${commandName}`);
-
-            // Check if it's a command or alias
-            let command = this.commands.get(commandName);
-            if (!command) {
-                const mainCommandName = this.aliases.get(commandName);
-                if (mainCommandName) {
-                    command = this.commands.get(mainCommandName);
-                }
+            if (!commandName) {
+                this.logger.debug('No command name provided');
+                return;
             }
+
+            const executionId = `${message._id}-${commandName}`;
+            
+            if (this.executedCommands.has(executionId)) {
+                this.logger.debug(`Skipping duplicate execution: ${executionId}`);
+                return;
+            }
+
+            const command = this.commands.get(commandName) ?? 
+                           this.commands.get(this.aliases.get(commandName) ?? '');
 
             if (!command) {
                 this.logger.debug(`Command not found: ${commandName}`);
                 return;
             }
 
-            // Execute the command
+            this.logger.debug(`Attempting to execute command: ${command.name}`);
+
+            this.executedCommands.add(executionId);
+            
+            setTimeout(() => {
+                this.executedCommands.delete(executionId);
+                this.logger.debug(`Cleaned up execution tracking for: ${executionId}`);
+            }, this.EXECUTION_TRACKING_TTL);
+
             await command.execute(message, args, this.client);
             this.logger.debug(`Executed command: ${command.name} by ${message.author?.username}`);
 
         } catch (error) {
-            this.logger.error("Error executing command:", error);
-            await message.reply({
-                embeds: [{
-                    title: "Error",
-                    description: "An error occurred while executing the command.",
-                    colour: "#ff0000"
-                }]
-            });
+            this.logger.error(`Command execution error:`, error);
+            throw error;
         }
     }
 

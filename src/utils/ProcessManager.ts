@@ -1,4 +1,4 @@
-import { mainLogger } from "./Logger.js";
+import { Logger } from "./Logger.js";
 
 type CleanupFunction = () => void;
 
@@ -6,7 +6,7 @@ export class ProcessManager {
     private static instance: ProcessManager;
     private cleanupFunctions: Set<CleanupFunction>;
     private isShuttingDown: boolean;
-    private logger = mainLogger.createLogger("ProcessManager");
+    private logger = Logger.getInstance("ProcessManager");
 
     private constructor() {
         this.cleanupFunctions = new Set();

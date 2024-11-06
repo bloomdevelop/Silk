@@ -1,4 +1,4 @@
-import { createClient, Client, ResultSet, Value } from "@libsql/client";
+import { createClient, Client, ResultSet, Value, Transaction } from "@libsql/client";
 import { mainLogger } from "../utils/Logger.js";
 import { IConfiguration, UserEconomy, TodoItem, InventoryItem } from "../types.js";
 import { CircuitBreaker } from "../utils/CircuitBreaker.js";
@@ -35,7 +35,7 @@ interface TodoRow extends Record<string, Value> {
 
 export class DatabaseService {
     private static instance: DatabaseService;
-    private client: Client | null = null;
+    private client!: Client;
     private configCache: Map<string, {
         data: IConfiguration;
         timestamp: number;
@@ -108,34 +108,40 @@ export class DatabaseService {
 
     public async destroy(): Promise<void> {
         try {
-            mainLogger.debug('Starting database service cleanup...');
-
-            // Run final cleanup
-            await this.cleanup();
-
-            // Clear intervals
-            if (this.cleanupInterval) {
-                clearInterval(this.cleanupInterval);
-                this.cleanupInterval = undefined;
+            // Check if already destroyed
+            if (!this.client) {
+                mainLogger.debug('Database service already destroyed, skipping cleanup');
+                return;
             }
 
-            // Clear caches
-            this.configCache.clear();
-            this.economyCache.clear();
+            mainLogger.debug('Starting database service cleanup...');
 
-            // Destroy circuit breaker
-            this.dbCircuit.destroy();
+            try {
+                // Clear cleanup interval first
+                if (this.cleanupInterval) {
+                    clearInterval(this.cleanupInterval);
+                    this.cleanupInterval = undefined;
+                }
 
-            // Close database connection
-            if (this.client) {
+                // Run final cleanup before closing connection
+                await this.cleanup();
+
+                // Close database connection
                 // @ts-ignore - LibSQL client doesn't expose close method in types
                 if (typeof this.client.close === 'function') {
                     await this.client.close();
                 }
-                this.client = null;
-            }
 
-            mainLogger.info('Database service destroyed successfully');
+                // Use type assertion to handle nulling the client
+                (this.client as any) = null;
+
+                mainLogger.info('Database service destroyed successfully');
+            } catch (error) {
+                mainLogger.error('Error during database service cleanup:', error);
+                // Use type assertion here as well
+                (this.client as any) = null;
+                throw error;
+            }
         } catch (error) {
             mainLogger.error('Error during database service cleanup:', error);
             throw error;
@@ -568,5 +574,17 @@ export class DatabaseService {
     private async executeModification(sql: string, args: any[] = []): Promise<boolean> {
         const result = await this.executeQuery<Record<string, Value>>(sql, args);
         return result.rowsAffected > 0;
+    }
+
+    async beginTransaction(): Promise<Transaction> {
+        return await this.client.transaction();
+    }
+
+    async commitTransaction(transaction: Transaction): Promise<void> {
+        await transaction.commit();
+    }
+
+    async rollbackTransaction(transaction: Transaction): Promise<void> {
+        await transaction.rollback();
     }
 }

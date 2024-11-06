@@ -2,7 +2,7 @@ import { Client } from "revolt.js";
 import type { Message } from "revolt.js";
 import { CommandManager } from "./CommandManager.js";
 import { DatabaseService } from "../services/DatabaseService.js";
-import { Logger, mainLogger } from "../utils/Logger.js";
+import { Logger } from "../utils/Logger.js";
 import { ProcessManager } from "../utils/ProcessManager.js";
 
 export class EventManager {
@@ -16,14 +16,15 @@ export class EventManager {
     private isRegistered: boolean = false;
     private messageHandlerBound: ((message: Message) => Promise<void>) | null = null;
     private readyHandlerBound: (() => void) | null = null;
-    private messageHandled = new Set<string>(); // Track handled message IDs
-    private readonly MESSAGE_TRACKING_TTL = 5000; // 5 seconds
+    private handledMessages = new Set<string>();
+    private processingMessages = new Set<string>();
+    private readonly MESSAGE_TTL = 5000; // 5 seconds
 
     constructor(client: Client, commandManager: CommandManager) {
         this.client = client;
         this.commandManager = commandManager;
         this.db = DatabaseService.getInstance();
-        this.logger = mainLogger.createLogger("EventManager");
+        this.logger = Logger.getInstance("EventManager");
         this.prefixCache = new Map();
         
         // Set up cleanup interval
@@ -65,19 +66,29 @@ export class EventManager {
 
     private async messageHandler(message: Message): Promise<void> {
         try {
-            // Check if message was already handled
-            if (this.messageHandled.has(message._id)) {
-                this.logger.debug(`Skipping already handled message: ${message._id}`);
+            // Create a unique message identifier
+            const messageId = message._id;
+
+            // Check if we've already handled this message
+            if (this.handledMessages.has(messageId)) {
+                this.logger.debug(`Skipping duplicate message: ${messageId}`);
                 return;
             }
 
-            // Add message to handled set
-            this.messageHandled.add(message._id);
-            
-            // Clean up old message IDs after TTL
+            // Check if this specific message is being processed
+            if (this.processingMessages.has(messageId)) {
+                this.logger.debug(`Message ${messageId} is already being processed`);
+                return;
+            }
+
+            // Mark this specific message as being processed
+            this.processingMessages.add(messageId);
+
+            // Add to handled messages and set cleanup
+            this.handledMessages.add(messageId);
             setTimeout(() => {
-                this.messageHandled.delete(message._id);
-            }, this.MESSAGE_TRACKING_TTL);
+                this.handledMessages.delete(messageId);
+            }, this.MESSAGE_TTL);
 
             // Ignore bots and self
             if (message.author?.bot || message.author?._id === this.client.user?._id) {
@@ -90,7 +101,6 @@ export class EventManager {
 
             // Generate a unique cache key
             const cacheKey = serverId || '_direct_messages';
-            this.logger.debug(`Processing message in ${serverId ? `server ${serverId}` : 'DMs'}`);
 
             // Check prefix cache
             const cached = this.prefixCache.get(cacheKey);
@@ -98,7 +108,7 @@ export class EventManager {
 
             if (cached && (now - cached.timestamp) < this.CACHE_TTL) {
                 prefix = cached.prefix;
-                this.logger.debug(`Using cached prefix: ${prefix}`);
+                this.logger.debug(`Using cached prefix for ${cacheKey}`);
             } else {
                 this.logger.debug(`Fetching prefix for ${cacheKey}`);
                 const serverConfig = await this.db.getServerConfig(serverId);
@@ -117,17 +127,14 @@ export class EventManager {
                 return;
             }
 
-            this.logger.debug(`Executing command from message: ${message.content}`);
-            // Execute command
+            this.logger.debug(`Processing command from message: ${message.content}`);
             await this.commandManager.executeCommand(message, prefix);
 
         } catch (error) {
             this.logger.error("Error handling message:", error);
-            this.logger.debug("Message details:", {
-                content: message.content,
-                author: message.author?.username,
-                serverId: message.channel?.server?._id
-            });
+        } finally {
+            // Remove the processing lock for this specific message
+            this.processingMessages.delete(message._id);
         }
     }
 
@@ -137,22 +144,18 @@ export class EventManager {
     }
 
     private removeEventListeners(): void {
-        if (!this.isRegistered) {
-            this.logger.debug('No event listeners to remove');
-            return;
-        }
-
         this.logger.debug('Removing existing event listeners...');
-
-        // Remove all existing listeners for these events
-        this.client.removeAllListeners('message');
-        this.client.removeAllListeners('ready');
-
-        // Clear the bound handlers
+        
+        if (this.messageHandlerBound) {
+            this.client.removeListener("message", this.messageHandlerBound);
+        }
+        
+        if (this.readyHandlerBound) {
+            this.client.removeListener("ready", this.readyHandlerBound);
+        }
+        
         this.messageHandlerBound = null;
         this.readyHandlerBound = null;
-        this.isRegistered = false;
-
         this.logger.debug('Event listeners removed successfully');
     }
 
@@ -190,7 +193,8 @@ export class EventManager {
         }
         
         this.prefixCache.clear();
-        this.messageHandled.clear(); // Clear message tracking set
+        this.handledMessages.clear();
+        this.processingMessages.clear(); // Clear processing set
         this.logger.info('EventManager destroyed successfully');
     }
 }
