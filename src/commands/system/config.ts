@@ -2,6 +2,7 @@ import { ICommand } from "../../types.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
 import { mainLogger } from "../../utils/Logger.js";
 import { Message } from "revolt.js";
+import { IConfiguration } from "../../types.js";
 
 const ConfigCommand: ICommand = {
     name: "config",
@@ -9,40 +10,40 @@ const ConfigCommand: ICommand = {
     usage: "config <view|set|reset> <key> <value>",
     category: "System",
 
-    async execute(message: Message, args: string[]) {
+    async execute(message: Message, args: string[]): Promise<void> {
         const db: DatabaseService = DatabaseService.getInstance();
         const serverId = message.channel?.server?._id;
 
         if (!serverId) {
-            return message.reply({
+            message.reply({
                 embeds: [
                     {
                         title: "Configuration Error",
-                        description:
-                            "This command can only be used in servers",
+                        description: "This command can only be used in servers",
                         colour: "#ff0000",
                     },
                 ],
             });
+            return;
         }
 
         // Reset config
         if (args[0] === "reset") {
             await db.createDefaultConfig(serverId);
-            return message.reply({
+            await message.reply({
                 embeds: [
                     {
                         title: "Configuration Reset",
-                        description:
-                            "Server configuration has been reset to defaults",
+                        description: "Server configuration has been reset to defaults",
                         colour: "#00ff00",
                     },
                 ],
             });
+            return;
         }
 
         if (!args.length) {
-            return message.reply({
+            await message.reply({
                 embeds: [
                     {
                         title: "Available Configuration Settings",
@@ -69,120 +70,139 @@ const ConfigCommand: ICommand = {
                     },
                 ],
             });
+            return;
         }
 
         // View config when no args or 'view' is specified
         if (args[0] === "view") {
             const config = await db.getServerConfig(serverId);
-            return message.reply({
+            await message.reply({
                 embeds: [
                     {
-                        title: "Server Configuration",
-                        description: `\`\`\`json\n${JSON.stringify(config, null, 2)}\n\`\`\``,
+                        title: "Current Configuration",
+                        description: [
+                            "**Bot Settings:**",
+                            `• Prefix: ${config.bot.prefix}`,
+                            `• Default Cooldown: ${config.bot.defaultCooldown}ms`,
+                            "",
+                            "**Features:**",
+                            `• Moderation: ${config.features.experiments.moderation}`,
+                            `• Economy: ${config.features.experiments.economy}`,
+                            "",
+                            "**Security:**",
+                            `• Blocked Users: ${config.security.blockedUsers.length}`,
+                            `• Allowed Servers: ${config.security.allowedServers.length}`,
+                            "",
+                            "**Commands:**",
+                            `• Disabled: ${config.commands.disabled.length}`,
+                            `• Dangerous: ${config.commands.dangerous.length}`,
+                        ].join("\n"),
                         colour: "#00ff00",
                     },
                 ],
             });
+            return;
         }
 
         // Handle set command
         if (args[0] === "set" && args.length >= 3) {
-            const [, key, ...valueArgs] = args;
-            const value = valueArgs.join(" ");
+            const key = args[1].toLowerCase();
+            const value = args.slice(2).join(" ");
             const config = await db.getServerConfig(serverId);
 
             switch (key) {
                 case "prefix": {
-                    await db.updateServerConfig(serverId, {
-                        bot: { ...config.bot, prefix: value },
-                    });
+                    const updatedConfig: IConfiguration = {
+                        ...config,
+                        bot: { ...config.bot, prefix: value }
+                    };
+                    await db.updateServerConfig(serverId, updatedConfig);
                     break;
                 }
                 case "cooldown": {
                     const cooldown = parseInt(value);
                     if (isNaN(cooldown) || cooldown < 0) {
-                        return message.reply({
-                            embeds: [
-                                {
-                                    title: "Invalid Value",
-                                    description:
-                                        "Cooldown must be a positive number",
-                                    colour: "#ff0000",
-                                },
-                            ],
+                        await message.reply({
+                            embeds: [{
+                                title: "Invalid Cooldown",
+                                description: "Cooldown must be a positive number",
+                                colour: "#ff0000"
+                            }]
                         });
+                        return;
                     }
-                    await db.updateServerConfig(serverId, {
-                        bot: {
-                            ...config.bot,
-                            defaultCooldown: cooldown,
-                        },
-                    });
+                    const updatedConfig: IConfiguration = {
+                        ...config,
+                        bot: { ...config.bot, defaultCooldown: cooldown }
+                    };
+                    await db.updateServerConfig(serverId, updatedConfig);
                     break;
                 }
                 case "moderation": {
-                    await db.updateServerConfig(serverId, {
+                    const updatedConfig: IConfiguration = {
+                        ...config,
                         features: {
                             ...config.features,
                             experiments: {
                                 ...config.features.experiments,
-                                moderation: value === "true",
-                            },
-                        },
-                    });
+                                moderation: value === "true"
+                            }
+                        }
+                    };
+                    await db.updateServerConfig(serverId, updatedConfig);
                     break;
                 }
                 case "economy": {
-                    await db.updateServerConfig(serverId, {
+                    const updatedConfig: IConfiguration = {
+                        ...config,
                         features: {
                             ...config.features,
                             experiments: {
                                 ...config.features.experiments,
-                                economy: value === "true",
-                            },
-                        },
-                    });
+                                economy: value === "true"
+                            }
+                        }
+                    };
+                    await db.updateServerConfig(serverId, updatedConfig);
                     break;
                 }
                 case "owners": {
-                    const owners = value
-                        .split(",")
-                        .map((id) => id.trim());
-                    await db.updateServerConfig(serverId, {
-                        bot: { ...config.bot, owners },
-                    });
+                    const owners = value.split(",").map((id) => id.trim());
+                    const updatedConfig: IConfiguration = {
+                        ...config,
+                        bot: { ...config.bot, owners }
+                    };
+                    await db.updateServerConfig(serverId, updatedConfig);
                     break;
                 }
                 case "blockedUsers": {
-                    const users = value
-                        .split(",")
-                        .map((id) => id.trim());
-                    await db.updateServerConfig(serverId, {
+                    const users = value.split(",").map((id) => id.trim());
+                    const updatedConfig: IConfiguration = {
+                        ...config,
                         security: {
                             ...config.security,
-                            blockedUsers: users,
-                        },
-                    });
+                            blockedUsers: users
+                        }
+                    };
+                    await db.updateServerConfig(serverId, updatedConfig);
                     break;
                 }
                 default: {
-                    return message.reply({
+                    await message.reply({
                         embeds: [
                             {
                                 title: "Invalid Configuration Key",
-                                description:
-                                    "Available keys: prefix, cooldown, moderation, economy, owners, blockedUsers",
+                                description: "Available keys: prefix, cooldown, moderation, economy, owners, blockedUsers",
                                 colour: "#ff0000",
                             },
                         ],
                     });
+                    return;
                 }
             }
 
-            mainLogger.info(
-                `Updated ${key} for server ${serverId}`,
-            );
-            return message.reply({
+            mainLogger.info(`Updated ${key} for server ${serverId}`);
+            await message.reply({
                 embeds: [
                     {
                         title: "Configuration Updated",
@@ -191,15 +211,15 @@ const ConfigCommand: ICommand = {
                     },
                 ],
             });
+            return;
         }
 
         // Invalid usage
-        return message.reply({
+        await message.reply({
             embeds: [
                 {
                     title: "Invalid Usage",
-                    description:
-                        "Use `config view`, `config set <key> <value>`, or `config reset`",
+                    description: "Use `config view`, `config set <key> <value>`, or `config reset`",
                     colour: "#ff0000",
                 },
             ],

@@ -1,6 +1,7 @@
 import { Client, Message } from "revolt.js";
+import { Logger } from "./utils/Logger.js";
 
-type Category = "Moderation" | "Economy" | "System" | "Utility" | "Fun" | "Info" | "Hidden";
+export type Category = "Moderation" | "Economy" | "System" | "Utility" | "Fun" | "Info" | "Hidden";
 
 export interface RateLimitConfig {
     usages: number;      // How many times the command can be used
@@ -37,6 +38,7 @@ export interface ICommand {
         ownerOnly?: boolean;
         dangerous?: boolean;
     };
+    logger?: Logger;
     execute(
         message: Message,
         args: string[],
@@ -80,12 +82,14 @@ export type Events = {
 }
 
 export interface UserEconomy {
+    user_id: string;
     balance: number;
     bank: number;
     inventory: InventoryItem[];
     lastDaily: number;
     lastWork: number;
     workStreak: number;
+    total: number;
 }
 
 export interface InventoryItem {
@@ -102,4 +106,19 @@ export interface ShopItem {
     price: number;
     type: "collectable" | "usable" | "rare";
     emoji?: string;
+}
+
+export interface TodoItem {
+    id: number;
+    server_id: string;
+    user_id: string;
+    content: string;
+    completed: boolean;
+    created_at: number;
+    updated_at: number;
+}
+
+export interface ErrorHandler {
+    message: string;
+    statusCode: number;
 }
