@@ -1,4 +1,5 @@
 import { ICommand } from "../../types.js";
+import { ErrorHandler } from "../../utils/ErrorHandler.js";
 import { commandLogger } from "../../utils/Logger.js";
 
 const ping: ICommand = {
@@ -24,7 +25,7 @@ const ping: ICommand = {
             });
 
             if (!loadingMsg) {
-                throw new Error("Failed to send initial message");
+                throw new ErrorHandler("Failed to send initial message", 500);
             }
 
             const startTime = Date.now();
@@ -52,13 +53,15 @@ const ping: ICommand = {
             });
         } catch (error) {
             commandLogger.error("Error in ping command:", error);
-            return message.reply({
-                embeds: [{
-                    title: "Error",
-                    description: "Failed to execute ping command",
-                    colour: "#ff0000"
-                }]
-            });
+            if (error instanceof ErrorHandler) {
+                return message.reply({
+                    embeds: [{
+                        title: "Error",
+                        description: `Failed to execute ping command\n\`\`\`${error.message}\`\`\``,
+                        colour: "#ff0000"
+                    }]
+                });
+            }
         }
     }
 };

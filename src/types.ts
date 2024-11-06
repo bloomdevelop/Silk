@@ -103,3 +103,18 @@ export interface ShopItem {
     type: "collectable" | "usable" | "rare";
     emoji?: string;
 }
+
+export interface TodoItem {
+    id: number;
+    server_id: string;
+    user_id: string;
+    content: string;
+    completed: boolean;
+    created_at: number;
+    updated_at: number;
+}
+
+export interface ErrorHandler {
+    message: string;
+    statusCode: number;
+}

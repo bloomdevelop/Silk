@@ -1,6 +1,9 @@
 import { createClient, Client } from "@libsql/client";
 import { mainLogger } from "../utils/Logger.js";
-import { IConfiguration, UserEconomy } from "../types.js";
+import { IConfiguration, UserEconomy, TodoItem } from "../types.js";
+import { mkdir } from "fs/promises";
+import { join } from "path";
+import { existsSync } from "fs";
 
 export class DatabaseService {
     private static instance: DatabaseService;
@@ -8,18 +11,36 @@ export class DatabaseService {
     private configCache: Map<string, IConfiguration>;
 
     private constructor() {
-        const url = process.env.TURSO_DATABASE_URL;
-
-        if (!url) {
-            throw new Error("TURSO_DATABASE_URL not found in environment variables");
-        }
-
+        const url = process.env.TURSO_DATABASE_URL || 'file:data/local.db';
+        
         this.client = createClient({
             url: url
         });
         
         this.configCache = new Map();
-        this.initializeTables();
+        mainLogger.info(`Database initialized with URL: ${url.startsWith('file:') ? 'local SQLite' : 'Turso'}`);
+    }
+
+    static getInstance(): DatabaseService {
+        if (!DatabaseService.instance) {
+            DatabaseService.instance = new DatabaseService();
+        }
+        return DatabaseService.instance;
+    }
+
+    async initialize(): Promise<void> {
+        // Create data directory if using local SQLite
+        if (!process.env.TURSO_DATABASE_URL) {
+            const dataDir = join(process.cwd(), 'data');
+            if (!existsSync(dataDir)) {
+                await mkdir(dataDir, { recursive: true });
+                mainLogger.info('Created data directory for local SQLite database');
+            }
+        }
+
+        // Initialize database tables
+        await this.initializeTables();
+        mainLogger.info('Database tables initialized successfully');
     }
 
     private async initializeTables(): Promise<void> {
@@ -27,7 +48,9 @@ export class DatabaseService {
         await this.client.execute(`
             CREATE TABLE IF NOT EXISTS server_configs (
                 server_id TEXT PRIMARY KEY,
-                config TEXT NOT NULL
+                config TEXT NOT NULL,
+                created_at INTEGER DEFAULT (unixepoch()),
+                updated_at INTEGER DEFAULT (unixepoch())
             )
         `);
 
@@ -45,13 +68,27 @@ export class DatabaseService {
                 updated_at INTEGER DEFAULT (unixepoch())
             )
         `);
-    }
 
-    static getInstance(): DatabaseService {
-        if (!DatabaseService.instance) {
-            DatabaseService.instance = new DatabaseService();
-        }
-        return DatabaseService.instance;
+        // Todos table
+        await this.client.execute(`
+            CREATE TABLE IF NOT EXISTS todos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                server_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                completed BOOLEAN DEFAULT FALSE,
+                created_at INTEGER NOT NULL,
+                updated_at INTEGER NOT NULL,
+                FOREIGN KEY (server_id) REFERENCES server_configs(server_id) ON DELETE CASCADE
+            )
+        `);
+
+        // Create indexes for better performance
+        await this.client.execute(`
+            CREATE INDEX IF NOT EXISTS idx_todos_server_id ON todos(server_id);
+            CREATE INDEX IF NOT EXISTS idx_economy_balance ON economy(balance);
+            CREATE INDEX IF NOT EXISTS idx_economy_bank ON economy(bank);
+        `);
     }
 
     async getServerConfig(serverId: string | undefined): Promise<IConfiguration> {
@@ -163,15 +200,32 @@ export class DatabaseService {
         });
     }
 
-    async updateServerConfig(serverId: string, config: Partial<IConfiguration>, isDefault = false): Promise<void> {
+    async updateServerConfig(serverId: string | undefined, config: IConfiguration): Promise<void> {
+        if (!serverId) {
+            // Handle global config updates
+            const globalConfig = await this.getServerConfig(undefined);
+            const newConfig = {
+                ...globalConfig,
+                ...config,
+                bot: { ...globalConfig.bot, ...config.bot },
+                commands: { ...globalConfig.commands, ...config.commands },
+                features: { ...globalConfig.features, ...config.features },
+                security: { ...globalConfig.security, ...config.security }
+            };
+            
+            // Store the global config in memory only
+            this.configCache.set('global', newConfig);
+            return;
+        }
+
         mainLogger.debug(`Updating config for server: ${serverId}`);
 
         let newConfig: IConfiguration;
-        if (!isDefault) {
+        if (!serverId) {
+            newConfig = config as IConfiguration;
+        } else {
             const currentConfig = await this.getServerConfig(serverId);
             newConfig = { ...currentConfig, ...config };
-        } else {
-            newConfig = config as IConfiguration;
         }
 
         const configString = JSON.stringify(newConfig);
@@ -203,8 +257,8 @@ export class DatabaseService {
             },
             features: {
                 experiments: {
-                    economy: false,
-                    moderation: false
+                    moderation: false,
+                    economy: false
                 }
             },
             security: {
@@ -213,7 +267,7 @@ export class DatabaseService {
             }
         };
 
-        await this.updateServerConfig(serverId, defaultConfig, true);
+        await this.updateServerConfig(serverId, defaultConfig);
         return defaultConfig;
     }
 
@@ -242,5 +296,90 @@ export class DatabaseService {
             bank: Number(row.bank),
             total: Number(row.total)
         }));
+    }
+
+    // Todo Methods
+    async getTodos(serverId: string): Promise<TodoItem[]> {
+        const result = await this.client.execute({
+            sql: `
+                SELECT * FROM todos 
+                WHERE server_id = ?
+                ORDER BY completed ASC, created_at DESC
+            `,
+            args: [serverId]
+        });
+
+        return result.rows.map(row => ({
+            id: Number(row.id),
+            server_id: row.server_id as string,
+            user_id: row.user_id as string,
+            content: row.content as string,
+            completed: Boolean(row.completed),
+            created_at: Number(row.created_at),
+            updated_at: Number(row.updated_at)
+        }));
+    }
+
+    async createTodo(serverId: string, userId: string, content: string): Promise<TodoItem> {
+        const now = Date.now();
+        const result = await this.client.execute({
+            sql: `
+                INSERT INTO todos (server_id, user_id, content, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                RETURNING *
+            `,
+            args: [serverId, userId, content, now, now]
+        });
+
+        const row = result.rows[0];
+        return {
+            id: Number(row.id),
+            server_id: row.server_id as string,
+            user_id: row.user_id as string,
+            content: row.content as string,
+            completed: Boolean(row.completed),
+            created_at: Number(row.created_at),
+            updated_at: Number(row.updated_at)
+        };
+    }
+
+    async updateTodo(todoId: number, serverId: string, content: string): Promise<boolean> {
+        const result = await this.client.execute({
+            sql: `
+                UPDATE todos 
+                SET content = ?, updated_at = ?
+                WHERE id = ? AND server_id = ?
+            `,
+            args: [content, Date.now(), todoId, serverId]
+        });
+        return result.rowsAffected > 0;
+    }
+
+    async toggleTodo(todoId: number, serverId: string): Promise<boolean> {
+        const result = await this.client.execute({
+            sql: `
+                UPDATE todos 
+                SET completed = NOT completed, updated_at = ?
+                WHERE id = ? AND server_id = ?
+            `,
+            args: [Date.now(), todoId, serverId]
+        });
+        return result.rowsAffected > 0;
+    }
+
+    async removeTodo(todoId: number, serverId: string): Promise<boolean> {
+        const result = await this.client.execute({
+            sql: 'DELETE FROM todos WHERE id = ? AND server_id = ?',
+            args: [todoId, serverId]
+        });
+        return result.rowsAffected > 0;
+    }
+
+    async removeAllTodos(serverId: string): Promise<number> {
+        const result = await this.client.execute({
+            sql: 'DELETE FROM todos WHERE server_id = ?',
+            args: [serverId]
+        });
+        return result.rowsAffected;
     }
 }
