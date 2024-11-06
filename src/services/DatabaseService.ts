@@ -6,6 +6,7 @@ import { mkdir } from "fs/promises";
 import { join } from "path";
 import { existsSync } from "fs";
 import process from 'process';
+import { ProcessManager } from "../utils/ProcessManager.js";
 
 // Define row interfaces with index signatures
 interface ConfigRow extends Record<string, Value> {
@@ -34,7 +35,7 @@ interface TodoRow extends Record<string, Value> {
 
 export class DatabaseService {
     private static instance: DatabaseService;
-    private client: Client;
+    private client: Client | null = null;
     private configCache: Map<string, {
         data: IConfiguration;
         timestamp: number;
@@ -48,9 +49,6 @@ export class DatabaseService {
     private readonly CACHE_TTL = 300000; // 5 minutes
 
     private constructor() {
-        const url = process.env.TURSO_DATABASE_URL || 'file:data/local.db';
-        
-        this.client = createClient({ url });
         this.configCache = new Map();
         this.economyCache = new Map();
         this.dbCircuit = new CircuitBreaker('Database');
@@ -59,9 +57,7 @@ export class DatabaseService {
         this.cleanupInterval = setInterval(() => this.cleanupCache(), this.CACHE_TTL);
         
         // Add cleanup handler for process exit
-        this.setupCleanupHandler();
-        
-        mainLogger.info(`Database initialized with URL: ${url.startsWith('file:') ? 'local SQLite' : 'Turso'}`);
+        ProcessManager.getInstance().registerCleanupFunction(() => this.destroy());
     }
 
     static getInstance(): DatabaseService {
@@ -72,23 +68,83 @@ export class DatabaseService {
     }
 
     async initialize(): Promise<void> {
-        // Create data directory if using local SQLite
-        if (!process.env.TURSO_DATABASE_URL) {
-            const dataDir = join(process.cwd(), 'data');
-            if (!existsSync(dataDir)) {
-                await mkdir(dataDir, { recursive: true });
-                mainLogger.info('Created data directory for local SQLite database');
+        try {
+            // Create data directory if using local SQLite
+            if (!process.env.TURSO_DATABASE_URL) {
+                const dataDir = join(process.cwd(), 'data');
+                if (!existsSync(dataDir)) {
+                    await mkdir(dataDir, { recursive: true });
+                    mainLogger.info('Created data directory for local SQLite database');
+                }
             }
+
+            // Initialize database connection
+            const url = process.env.TURSO_DATABASE_URL || 'file:data/local.db';
+            this.client = createClient({ url });
+            mainLogger.info(`Database initialized with URL: ${url.startsWith('file:') ? 'local SQLite' : 'Turso'}`);
+
+            // Initialize database tables
+            await this.initializeTables();
+            mainLogger.info('Database tables initialized successfully');
+        } catch (error) {
+            mainLogger.error('Failed to initialize database:', error);
+            throw error;
+        }
+    }
+
+    private async executeQuery<T extends Record<string, Value>>(
+        sql: string, 
+        args: any[] = []
+    ): Promise<ResultSet & { rows: T[] }> {
+        if (!this.client) {
+            throw new Error('Database not initialized');
         }
 
-        // Initialize database tables
-        await this.initializeTables();
-        mainLogger.info('Database tables initialized successfully');
+        return this.dbCircuit.execute(async () => {
+            const result = await this.client!.execute({ sql, args });
+            return result as ResultSet & { rows: T[] };
+        });
+    }
+
+    public async destroy(): Promise<void> {
+        try {
+            mainLogger.debug('Starting database service cleanup...');
+
+            // Run final cleanup
+            await this.cleanup();
+
+            // Clear intervals
+            if (this.cleanupInterval) {
+                clearInterval(this.cleanupInterval);
+                this.cleanupInterval = undefined;
+            }
+
+            // Clear caches
+            this.configCache.clear();
+            this.economyCache.clear();
+
+            // Destroy circuit breaker
+            this.dbCircuit.destroy();
+
+            // Close database connection
+            if (this.client) {
+                // @ts-ignore - LibSQL client doesn't expose close method in types
+                if (typeof this.client.close === 'function') {
+                    await this.client.close();
+                }
+                this.client = null;
+            }
+
+            mainLogger.info('Database service destroyed successfully');
+        } catch (error) {
+            mainLogger.error('Error during database service cleanup:', error);
+            throw error;
+        }
     }
 
     private async initializeTables(): Promise<void> {
         // Server configs table
-        await this.client.execute(`
+        await this.client!.execute(`
             CREATE TABLE IF NOT EXISTS server_configs (
                 server_id TEXT PRIMARY KEY,
                 config TEXT NOT NULL,
@@ -98,7 +154,7 @@ export class DatabaseService {
         `);
 
         // Economy table
-        await this.client.execute(`
+        await this.client!.execute(`
             CREATE TABLE IF NOT EXISTS economy (
                 user_id TEXT PRIMARY KEY,
                 balance INTEGER DEFAULT 0,
@@ -113,7 +169,7 @@ export class DatabaseService {
         `);
 
         // Todos table
-        await this.client.execute(`
+        await this.client!.execute(`
             CREATE TABLE IF NOT EXISTS todos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 server_id TEXT NOT NULL,
@@ -127,21 +183,11 @@ export class DatabaseService {
         `);
 
         // Create indexes for better performance
-        await this.client.execute(`
+        await this.client!.execute(`
             CREATE INDEX IF NOT EXISTS idx_todos_server_id ON todos(server_id);
             CREATE INDEX IF NOT EXISTS idx_economy_balance ON economy(balance);
             CREATE INDEX IF NOT EXISTS idx_economy_bank ON economy(bank);
         `);
-    }
-
-    private async executeQuery<T extends Record<string, Value>>(
-        sql: string, 
-        args: any[] = []
-    ): Promise<ResultSet & { rows: T[] }> {
-        return this.dbCircuit.execute(async () => {
-            const result = await this.client.execute({ sql, args });
-            return result as ResultSet & { rows: T[] };
-        });
     }
 
     async getServerConfig(serverId: string | undefined): Promise<IConfiguration> {
@@ -165,7 +211,7 @@ export class DatabaseService {
             }
 
             const result = await this.executeQuery<ConfigRow>(
-                "SELECT config FROM configs WHERE server_id = ?",
+                "SELECT config FROM server_configs WHERE server_id = ?",
                 [serverId]
             );
 
@@ -284,7 +330,7 @@ export class DatabaseService {
         
         try {
             await this.executeQuery(
-                "INSERT OR REPLACE INTO configs (server_id, config) VALUES (?, ?)",
+                "INSERT OR REPLACE INTO server_configs (server_id, config) VALUES (?, ?)",
                 [serverId, JSON.stringify(config)]
             );
 
@@ -306,7 +352,7 @@ export class DatabaseService {
 
         try {
             await this.executeQuery(
-                "INSERT INTO configs (server_id, config) VALUES (?, ?)",
+                "INSERT INTO server_configs (server_id, config) VALUES (?, ?)",
                 [serverId, JSON.stringify(defaultConfig)]
             );
 
@@ -451,13 +497,57 @@ export class DatabaseService {
         });
     }
 
+    // Add cleanup methods
+    async cleanup(): Promise<void> {
+        try {
+            mainLogger.debug('Starting database cleanup...');
+            
+            // Clean up old records
+            const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+            
+            // Delete old server configs that haven't been updated
+            const deletedConfigs = await this.executeQuery(
+                "DELETE FROM server_configs WHERE updated_at < ?",
+                [thirtyDaysAgo]
+            );
+            
+            // Delete old economy records with zero balance and no activity
+            const deletedEconomy = await this.executeQuery(
+                `DELETE FROM economy 
+                 WHERE balance = 0 
+                 AND bank = 0 
+                 AND last_daily < ? 
+                 AND last_work < ?`,
+                [thirtyDaysAgo, thirtyDaysAgo]
+            );
+            
+            // Delete completed todos older than 30 days
+            const deletedTodos = await this.executeQuery(
+                "DELETE FROM todos WHERE completed = TRUE AND updated_at < ?",
+                [thirtyDaysAgo]
+            );
+
+            mainLogger.info('Database cleanup completed:', {
+                configs: deletedConfigs.rowsAffected,
+                economy: deletedEconomy.rowsAffected,
+                todos: deletedTodos.rowsAffected
+            });
+
+        } catch (error) {
+            mainLogger.error('Error during database cleanup:', error);
+            throw error;
+        }
+    }
+
     private cleanupCache(): void {
         const now = Date.now();
+        let cleanedEntries = 0;
         
         // Cleanup config cache
         for (const [key, value] of this.configCache.entries()) {
             if (now - value.timestamp > this.CACHE_TTL) {
                 this.configCache.delete(key);
+                cleanedEntries++;
             }
         }
 
@@ -465,51 +555,18 @@ export class DatabaseService {
         for (const [key, value] of this.economyCache.entries()) {
             if (now - value.timestamp > this.CACHE_TTL) {
                 this.economyCache.delete(key);
+                cleanedEntries++;
             }
         }
 
-        // Log cleanup results
-        mainLogger.debug('Cache cleanup completed');
-    }
-
-    public destroy(): void {
-        if (this.cleanupInterval) {
-            clearInterval(this.cleanupInterval);
-            this.cleanupInterval = undefined;
+        if (cleanedEntries > 0) {
+            mainLogger.debug(`Cleaned up ${cleanedEntries} cache entries`);
         }
-        this.configCache.clear();
-        this.economyCache.clear();
-        this.dbCircuit.destroy();
     }
 
     // For methods returning rowsAffected
     private async executeModification(sql: string, args: any[] = []): Promise<boolean> {
         const result = await this.executeQuery<Record<string, Value>>(sql, args);
         return result.rowsAffected > 0;
-    }
-
-    private async setupCleanupHandler(): Promise<void> {
-        // Handle normal exit and errors
-        const cleanup = () => {
-            this.destroy();
-            mainLogger.info('Database service cleaned up successfully');
-        };
-
-        process.on('SIGINT', cleanup);
-        process.on('SIGTERM', cleanup);
-        process.on('exit', cleanup);
-
-        // Handle uncaught errors
-        process.on('uncaughtException', (error) => {
-            mainLogger.error('Uncaught exception:', error);
-            cleanup();
-            process.exit(1);
-        });
-
-        process.on('unhandledRejection', (reason) => {
-            mainLogger.error('Unhandled rejection:', reason);
-            cleanup();
-            process.exit(1);
-        });
     }
 }

@@ -1,83 +1,136 @@
 import { Client } from "revolt.js";
 import { CommandManager } from "./managers/CommandManager.js";
 import { EventManager } from "./managers/EventManager.js";
-import { Logger, mainLogger } from "./utils/Logger.js";
+import { mainLogger } from "./utils/Logger.js";
 import { DatabaseService } from "./services/DatabaseService.js";
+import { ProcessManager } from "./utils/ProcessManager.js";
 import { formatDuration, measureTime } from "./utils/TimeUtils.js";
 
 export class Bot {
     private static instance: Bot;
     private client: Client;
-    private logger: Logger;
+    private db: DatabaseService;
     private commandManager: CommandManager;
     private eventManager: EventManager;
-    private db: DatabaseService;
+    private startTime: number = 0;
 
     private constructor() {
+        const initStart = Date.now();
+        
+        // Validate token before initializing
+        this.validateEnvironment();
+        
         this.client = new Client();
-        this.logger = mainLogger.createLogger("Bot");
         this.db = DatabaseService.getInstance();
-        this.commandManager = new CommandManager(this.client);
+        this.commandManager = CommandManager.getInstance(this.client);
         this.eventManager = new EventManager(this.client, this.commandManager);
+        
+        // Register cleanup with ProcessManager
+        ProcessManager.getInstance().registerCleanupFunction(() => this.destroy());
+
+        const initTime = Date.now() - initStart;
+        mainLogger.info(`Bot initialized in ${formatDuration(initTime)}`);
     }
 
-    public static getInstance(): Bot {
+    private validateEnvironment(): void {
+        if (!process.env.TOKEN) {
+            const error = 'Bot token not found in environment variables';
+            mainLogger.error(error);
+            throw new Error(error);
+        }
+
+        // Optional: Validate other required environment variables
+        if (!process.env.TURSO_DATABASE_URL) {
+            mainLogger.warn('TURSO_DATABASE_URL not set, using local SQLite database');
+        }
+    }
+
+    static getInstance(): Bot {
         if (!Bot.instance) {
             Bot.instance = new Bot();
         }
         return Bot.instance;
     }
 
-    public getCommandManager(): CommandManager {
+    // Getter methods
+    getCommandManager(): CommandManager {
         return this.commandManager;
     }
 
-    async start(): Promise<void> {
-        try {
-            const getTotalTime = measureTime();
+    getClient(): Client {
+        return this.client;
+    }
 
-            const token = process.env.TOKEN;
-            if (!token) {
-                throw new Error("No token provided in environment variables");
-            }
+    getDatabaseService(): DatabaseService {
+        return this.db;
+    }
+
+    getUptime(): string {
+        return formatDuration(Date.now() - this.startTime);
+    }
+
+    async start(): Promise<void> {
+        const startupStart = Date.now();
+        try {
+            mainLogger.info('Starting bot initialization...');
 
             // Initialize database first
-            const getDbTime = measureTime();
+            const dbStart = measureTime();
             await this.db.initialize();
-            const dbTime = getDbTime();
-            this.logger.debug(`Database initialized in ${formatDuration(dbTime)}`);
+            const dbTime = dbStart();
+            mainLogger.info(`Database initialized in ${formatDuration(dbTime)}`);
 
-            // Load commands
-            const getCommandsTime = measureTime();
+            // Then initialize other components
+            const cmdStart = measureTime();
             await this.commandManager.loadCommands();
-            const commandsTime = getCommandsTime();
-            this.logger.debug(`Commands loaded in ${formatDuration(commandsTime)}`);
+            const cmdTime = cmdStart();
+            mainLogger.info(`Commands loaded in ${formatDuration(cmdTime)}`);
 
-            // Register events
-            const getEventsTime = measureTime();
+            const eventStart = measureTime();
             await this.eventManager.registerEvents();
-            const eventsTime = getEventsTime();
-            this.logger.debug(`Events registered in ${formatDuration(eventsTime)}`);
+            const eventTime = eventStart();
+            mainLogger.info(`Events registered in ${formatDuration(eventTime)}`);
 
-            // Login bot
-            const getLoginTime = measureTime();
-            await this.client.loginBot(token);
-            const loginTime = getLoginTime();
-            this.logger.debug(`Bot logged in in ${formatDuration(loginTime)}`);
+            // Login with validated token
+            const loginStart = measureTime();
+            if (!process.env.TOKEN) {
+                throw new Error('TOKEN environment variable is not set');
+            }
+            await this.client.loginBot(process.env.TOKEN);
+            const loginTime = loginStart();
+            mainLogger.info(`Bot logged in in ${formatDuration(loginTime)}`);
 
-            const totalTime = getTotalTime();
-            this.logger.info([
-                `Bot startup complete:`,
-                `• Database: ${formatDuration(dbTime)}`,
-                `• Commands: ${formatDuration(commandsTime)}`,
-                `• Events: ${formatDuration(eventsTime)}`,
-                `• Login: ${formatDuration(loginTime)}`,
-                `Total time: ${formatDuration(totalTime)}`
+            this.startTime = Date.now();
+            const totalTime = Date.now() - startupStart;
+
+            mainLogger.info([
+                '=== Startup Summary ===',
+                `Database Init: ${formatDuration(dbTime)}`,
+                `Command Loading: ${formatDuration(cmdTime)}`,
+                `Event Registration: ${formatDuration(eventTime)}`,
+                `Login Time: ${formatDuration(loginTime)}`,
+                `Total Startup Time: ${formatDuration(totalTime)}`,
+                '===================='
             ].join('\n'));
 
         } catch (error) {
-            this.logger.error("Failed to start bot:", error);
-            process.exit(1);
+            const failTime = Date.now() - startupStart;
+            mainLogger.error(`Failed to start bot after ${formatDuration(failTime)}:`, error);
+            throw error;
+        }
+    }
+
+    destroy(): void {
+        const destroyStart = measureTime();
+        try {
+            this.eventManager.destroy();
+            this.db.destroy();
+            this.client.logout();
+            const totalTime = destroyStart();
+            mainLogger.info(`Bot destroyed successfully in ${formatDuration(totalTime)}`);
+        } catch (error) {
+            mainLogger.error('Error during bot cleanup:', error);
+            throw error;
         }
     }
 }

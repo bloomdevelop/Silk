@@ -1,6 +1,20 @@
-import { ICommand } from "../../types.js";
+import { ICommand, Category } from "../../types.js";
 import { Message } from "revolt.js";
 import { Bot } from "../../Bot.js";
+
+interface CommandInfo {
+    name: string;
+    description: string;
+    category: Category;
+    aliases?: string[];
+    flags?: {
+        ownerOnly?: boolean;
+        disabled?: boolean;
+        wip?: boolean;
+        dangerous?: boolean;
+    };
+    usage?: string;
+}
 
 const formatFlags = (flags?: { [key: string]: boolean }): string | null => {
     if (!flags || Object.keys(flags).length === 0) return null;
@@ -29,22 +43,17 @@ const help: ICommand = {
         const bot = Bot.getInstance();
         const commandManager = bot.getCommandManager();
         const commands = commandManager.getCommands();
-
+        
         if (!args.length) {
-            const categories = new Map<string, ICommand[]>();
-
-            commands.forEach((cmd) => {
-                // Skip disabled commands unless user is owner
-                if (cmd.flags?.disabled && !message.author?.bot) {
-                    return;
+            const categories = new Map<Category, CommandInfo[]>();
+            
+            // Group commands by category
+            for (const [_, cmd] of commands) {
+                if (!categories.has(cmd.category)) {
+                    categories.set(cmd.category, []);
                 }
-                
-                const category = cmd.category || 'Uncategorized';
-                if (!categories.has(category)) {
-                    categories.set(category, []);
-                }
-                categories.get(category)!.push(cmd);
-            });
+                categories.get(cmd.category)?.push(cmd);
+            }
 
             const helpText = Array.from(categories.entries())
                 .map(([category, cmds]) => {
@@ -82,7 +91,10 @@ const help: ICommand = {
 
         // Detailed command help
         const commandName = args[0].toLowerCase();
-        const command = commands.get(commandName);
+        const command = commands.get(commandName) || 
+                       Array.from(commands.values()).find(cmd => 
+                           cmd.aliases?.includes(commandName)
+                       );
 
         if (!command) {
             return message.reply({
@@ -101,7 +113,7 @@ const help: ICommand = {
             '',
             `**Usage:** \`${command.usage || command.name}\``,
             `**Category:** ${command.category || "None"}`,
-            command.aliases?.length ? `**Aliases:** ${command.aliases.map(a => `\`${a}\``).join(', ')}` : null,
+            command.aliases?.length ? `**Aliases:** ${command.aliases.map(alias => `\`${alias}\``).join(', ')}` : null,
             flags ? `\n**Flags:**\n${flags}` : null,
             command.permissions ? [
                 "",

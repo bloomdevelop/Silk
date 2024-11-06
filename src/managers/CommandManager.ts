@@ -5,8 +5,10 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { Logger, mainLogger } from "../utils/Logger.js";
 import { formatDuration, measureTime } from "../utils/TimeUtils.js";
+import { ProcessManager } from "../utils/ProcessManager.js";
 
 export class CommandManager {
+    private static instance: CommandManager | null = null;
     private commands: Map<string, ICommand>;
     private aliases: Map<string, string>;
     private client: Client;
@@ -17,8 +19,13 @@ export class CommandManager {
     }>;
     private cleanupInterval: NodeJS.Timeout | null = null;
     private readonly CACHE_TTL = 300000; // 5 minutes
+    private isInitialized: boolean = false;
 
-    constructor(client: Client) {
+    private constructor(client: Client) {
+        if (!client) {
+            throw new Error('Client must be provided to CommandManager');
+        }
+        
         this.commands = new Map();
         this.aliases = new Map();
         this.client = client;
@@ -26,6 +33,22 @@ export class CommandManager {
         this.commandCache = new Map();
 
         this.cleanupInterval = setInterval(() => this.cleanupCache(), this.CACHE_TTL);
+        
+        // Register cleanup with ProcessManager
+        ProcessManager.getInstance().registerCleanupFunction(() => this.destroy());
+    }
+
+    static getInstance(client?: Client): CommandManager {
+        if (!CommandManager.instance) {
+            if (!client) {
+                throw new Error('Client must be provided when first creating CommandManager');
+            }
+            CommandManager.instance = new CommandManager(client);
+        } else if (client && client !== CommandManager.instance.client) {
+            // If a different client is provided after initialization, log a warning
+            mainLogger.warn('Attempting to initialize CommandManager with a different client instance');
+        }
+        return CommandManager.instance;
     }
 
     private cleanupCache(): void {
@@ -89,7 +112,16 @@ export class CommandManager {
     }
 
     async loadCommands(): Promise<void> {
+        if (this.isInitialized) {
+            this.logger.warn('Commands are already loaded, skipping initialization');
+            return;
+        }
+
         try {
+            // Clear existing commands before loading
+            this.commands.clear();
+            this.aliases.clear();
+
             const __dirname = dirname(fileURLToPath(import.meta.url));
             const categoriesPath = join(__dirname, "..", "commands");
             
@@ -149,6 +181,7 @@ export class CommandManager {
                 `Total: ${totalCommands} commands, ${totalAliases} aliases in ${formatDuration(totalTime)} (avg: ${formatDuration(avgTime)})`
             ].join('\n'));
 
+            this.isInitialized = true;
         } catch (error) {
             this.logger.error("Error loading commands:", error);
             throw error;

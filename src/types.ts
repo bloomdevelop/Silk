@@ -1,6 +1,6 @@
 import { Client, Message } from "revolt.js";
 
-type Category = "Moderation" | "Economy" | "System" | "Utility" | "Fun" | "Info" | "Hidden";
+export type Category = "Moderation" | "Economy" | "System" | "Utility" | "Fun" | "Info" | "Hidden";
 
 export interface RateLimitConfig {
     usages: number;      // How many times the command can be used
