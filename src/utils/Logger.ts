@@ -1,3 +1,5 @@
+import chalk from "chalk";
+
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 
 export class Logger {
@@ -16,8 +18,19 @@ export class Logger {
     }
 
     private formatMessage(level: LogLevel, message: string, ...args: any[]): string {
-        const timestamp = new Date().toISOString();
-        return `[${timestamp}] [${level.toUpperCase()}] [${this.context}] ${message} ${args.length ? JSON.stringify(args) : ''}`;
+        const timestamp = chalk.gray(new Date().toISOString());
+        const levelColor = {
+            debug: chalk.blue,
+            info: chalk.green,
+            warn: chalk.yellow,
+            error: chalk.red
+        }[level];
+
+        const formattedLevel = levelColor(level.toUpperCase().padEnd(5));
+        const formattedContext = chalk.cyan(`[${this.context}]`);
+        const formattedMessage = `${message} ${args.length ? JSON.stringify(args, null, 2) : ''}`;
+
+        return `${timestamp} ${formattedLevel} ${formattedContext} ${formattedMessage}`;
     }
 
     debug(message: string, ...args: any[]): void {
