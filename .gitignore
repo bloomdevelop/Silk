@@ -8,3 +8,4 @@ debug.log
 *-config.json
 data
 .idea
+.changelog-temp/
