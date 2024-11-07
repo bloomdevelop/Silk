@@ -1,5 +1,6 @@
 import { ICommand } from "../../types.js";
 import { commandLogger } from "../../utils/Logger.js";
+import { DatabaseService } from "../../services/DatabaseService.js";
 
 const kick: ICommand = {
     name: "kick",
@@ -7,6 +8,21 @@ const kick: ICommand = {
     usage: "kick <userId> <reason>",
     category: "Moderation",
     async execute(msg, args) {
+        const db = DatabaseService.getInstance();
+        const serverId = msg.channel?.server?._id;
+        
+        // Check if moderation is enabled
+        const config = await db.getServerConfig(serverId || '');
+        if (!config.features.experiments.moderation) {
+            return msg.reply({
+                embeds: [{
+                    title: "Feature Disabled",
+                    description: "Moderation commands are disabled on this server",
+                    colour: "#ff0000"
+                }]
+            });
+        }
+
         if (!args || args.length < 2) {
             return msg.reply({
                 embeds: [{

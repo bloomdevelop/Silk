@@ -10,6 +10,20 @@ const balance: ICommand = {
     
     async execute(msg, args) {
         const db = DatabaseService.getInstance();
+        const serverId = msg.channel?.server?._id;
+        
+        // Check if economy is enabled
+        const config = await db.getServerConfig(serverId || '');
+        if (!config.features.experiments.economy) {
+            return msg.reply({
+                embeds: [{
+                    title: "Feature Disabled",
+                    description: "Economy commands are disabled on this server",
+                    colour: "#ff0000"
+                }]
+            });
+        }
+
         const targetId = args[0]?.trim() || msg.author?._id;
         
         if (!targetId) {

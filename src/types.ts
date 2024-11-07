@@ -47,24 +47,62 @@ export interface ICommand {
 }
 
 export interface IConfiguration {
+    prefix: string;
+    welcomeChannel: string | null;
+    logChannel: string | null;
     bot: {
+        name: string;
+        status: string;
         prefix: string;
-        owners: string[];
         defaultCooldown: number;
+        owners: string[];
     };
     commands: {
+        enabled: boolean;
         disabled: string[];
         dangerous: string[];
     };
     features: {
+        welcome: boolean;
+        logging: boolean;
+        automod: boolean;
         experiments: {
             moderation: boolean;
             economy: boolean;
         };
     };
     security: {
+        antiSpam: boolean;
+        maxMentions: number;
+        maxLines: number;
         blockedUsers: string[];
         allowedServers: string[];
+    };
+    automod: {
+        enabled: boolean;
+        filters: {
+            spam: boolean;
+            invites: boolean;
+            links: boolean;
+            mentions: boolean;
+            caps: boolean;
+        };
+        thresholds: {
+            maxMentions: number;
+            maxCaps: number;
+            messageBurst: number;
+        };
+        whitelist: {
+            users: string[];
+            roles: string[];
+            channels: string[];
+            links: string[];
+        };
+        actions: {
+            delete: boolean;
+            warn: boolean;
+            timeout?: number;
+        };
     };
 }
 
@@ -82,21 +120,14 @@ export type Events = {
 }
 
 export interface UserEconomy {
-    user_id: string;
     balance: number;
     bank: number;
-    inventory: InventoryItem[];
-    lastDaily: number;
-    lastWork: number;
+    lastDaily: Date | null;
+    lastWork: Date | null;
     workStreak: number;
+    inventory: string[];
     total: number;
-}
-
-export interface InventoryItem {
-    id: string;
-    name: string;
-    amount: number;
-    type: "collectable" | "usable" | "rare";
+    user_id: string;
 }
 
 export interface ShopItem {
@@ -121,4 +152,42 @@ export interface TodoItem {
 export interface ErrorHandler {
     message: string;
     statusCode: number;
+}
+
+export interface AutoModConfig {
+    enabled: boolean;
+    filters: {
+        spam: boolean;
+        invites: boolean;
+        links: boolean;
+        mentions: boolean;
+        caps: boolean;
+    };
+    thresholds: {
+        maxMentions: number;
+        maxCaps: number;
+        maxLines: number;
+        messageInterval: number; // ms between messages
+        messageBurst: number;    // max messages in interval
+    };
+    actions: {
+        warn: boolean;
+        delete: boolean;
+        timeout?: number;       // timeout duration in minutes
+    };
+    whitelist: {
+        users: string[];
+        roles: string[];
+        channels: string[];
+        links: string[];
+    };
+}
+
+export interface AutoModViolation {
+    type: 'spam' | 'invites' | 'links' | 'mentions' | 'caps';
+    userId: string;
+    channelId: string;
+    messageId: string;
+    timestamp: number;
+    details?: string;
 }

@@ -3,13 +3,15 @@ import type { Message } from "revolt.js";
 import { CommandManager } from "./CommandManager.js";
 import { DatabaseService } from "../services/DatabaseService.js";
 import { Logger } from "../utils/Logger.js";
-import { ProcessManager } from "../utils/ProcessManager.js";
+import { ProcessManager } from "./ProcessManager.js";
+import { Bot } from "../Bot.js";
 
 export class EventManager {
     private client: Client;
     private commandManager: CommandManager;
     private db: DatabaseService;
     private logger: Logger;
+    private bot: Bot;
     private prefixCache: Map<string, { prefix: string, timestamp: number }>;
     private readonly CACHE_TTL = 300000; // 5 minutes
     private cleanupInterval: NodeJS.Timeout | null = null;
@@ -20,16 +22,17 @@ export class EventManager {
     private processingMessages = new Set<string>();
     private readonly MESSAGE_TTL = 5000; // 5 seconds
 
-    constructor(client: Client, commandManager: CommandManager) {
+    constructor(client: Client, commandManager: CommandManager, bot: Bot) {
         this.client = client;
         this.commandManager = commandManager;
         this.db = DatabaseService.getInstance();
         this.logger = Logger.getInstance("EventManager");
+        this.bot = bot;
         this.prefixCache = new Map();
-        
+
         // Set up cleanup interval
         this.cleanupInterval = setInterval(() => this.cleanupCache(), this.CACHE_TTL);
-        
+
         // Register cleanup with ProcessManager
         ProcessManager.getInstance().registerCleanupFunction(() => this.destroy());
     }
@@ -66,6 +69,10 @@ export class EventManager {
 
     private async messageHandler(message: Message): Promise<void> {
         try {
+            // Process message through AutoMod first
+            await this.bot.autoMod.processMessage(message);
+
+            // Continue with regular command processing
             // Create a unique message identifier
             const messageId = message._id;
 
@@ -111,9 +118,9 @@ export class EventManager {
                 this.logger.debug(`Using cached prefix for ${cacheKey}`);
             } else {
                 this.logger.debug(`Fetching prefix for ${cacheKey}`);
-                const serverConfig = await this.db.getServerConfig(serverId);
+                const serverConfig = await this.db.getServerConfig(serverId || '');
                 prefix = serverConfig.bot.prefix;
-                
+
                 this.prefixCache.set(cacheKey, {
                     prefix,
                     timestamp: now
@@ -145,15 +152,15 @@ export class EventManager {
 
     private removeEventListeners(): void {
         this.logger.debug('Removing existing event listeners...');
-        
+
         if (this.messageHandlerBound) {
             this.client.removeListener("message", this.messageHandlerBound);
         }
-        
+
         if (this.readyHandlerBound) {
             this.client.removeListener("ready", this.readyHandlerBound);
         }
-        
+
         this.messageHandlerBound = null;
         this.readyHandlerBound = null;
         this.logger.debug('Event listeners removed successfully');
@@ -187,11 +194,11 @@ export class EventManager {
             this.cleanupInterval = null;
             this.logger.debug('Cleanup interval cleared');
         }
-        
+
         if (this.isRegistered) {
             this.removeEventListeners();
         }
-        
+
         this.prefixCache.clear();
         this.handledMessages.clear();
         this.processingMessages.clear(); // Clear processing set

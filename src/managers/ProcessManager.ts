@@ -1,4 +1,4 @@
-import { Logger } from "./Logger.js";
+import { Logger } from "../utils/Logger.js";
 
 type CleanupFunction = () => void;
 
@@ -22,12 +22,15 @@ export class ProcessManager {
     }
 
     private setupProcessHandlers(): void {
-        const cleanup = async () => {
-            if (this.isShuttingDown) return;
-            this.isShuttingDown = true;
+        const cleanup = async (signal?: string) => {
+            if (this.isShuttingDown) {
+                this.logger.debug('Cleanup already in progress, skipping...');
+                return;
+            }
 
-            this.logger.info('Starting graceful shutdown...');
-            
+            this.isShuttingDown = true;
+            this.logger.info(`Starting graceful shutdown${signal ? ` (${signal})` : ''}...`);
+
             for (const fn of this.cleanupFunctions) {
                 try {
                     await Promise.resolve(fn());
@@ -36,24 +39,31 @@ export class ProcessManager {
                 }
             }
 
+            // Clear cleanup functions to prevent multiple executions
+            this.cleanupFunctions.clear();
+
             this.logger.info('Cleanup completed');
-            process.exit(0);
+
+            // Give a small delay for final logs to be written
+            setTimeout(() => {
+                Logger.cleanup();
+                process.exit(0);
+            }, 100);
         };
 
         // Handle normal termination signals
-        process.on('SIGINT', cleanup);
-        process.on('SIGTERM', cleanup);
-        process.on('exit', cleanup);
+        process.once('SIGINT', () => cleanup('SIGINT'));
+        process.once('SIGTERM', () => cleanup('SIGTERM'));
 
         // Handle uncaught errors
-        process.on('uncaughtException', (error) => {
+        process.once('uncaughtException', (error) => {
             this.logger.error('Uncaught exception:', error);
-            cleanup();
+            cleanup('uncaughtException').then(() => process.exit(1));
         });
 
-        process.on('unhandledRejection', (reason) => {
+        process.once('unhandledRejection', (reason) => {
             this.logger.error('Unhandled rejection:', reason);
-            cleanup();
+            cleanup('unhandledRejection').then(() => process.exit(1));
         });
     }
 

@@ -22,10 +22,10 @@ const daily: ICommand = {
         if (!userId) return;
 
         const economy = await db.getUserEconomy(userId);
-        
+
         // Update economy
         economy.balance += DAILY_AMOUNT;
-        economy.lastDaily = Date.now();
+        economy.lastDaily = new Date(Date.now());
 
         await db.updateUserEconomy(userId, economy);
 

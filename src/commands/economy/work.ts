@@ -39,7 +39,7 @@ const work: ICommand = {
 
         // Update economy
         economy.balance += reward;
-        economy.lastWork = now;
+        economy.lastWork = new Date(now);
         economy.workStreak += 1;
 
         // Bonus for streak

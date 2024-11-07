@@ -45,22 +45,23 @@ const help: ICommand = {
         try {
             const bot = Bot.getInstance();
             const commandManager = bot.getCommandManager();
-            const commands = commandManager.getCommands();
-            
+            const commandsMap = commandManager.getAllCommands();
+            const commandsList = Array.from(commandsMap.values());
+
             mainLogger.debug(`Help command execution:`, {
                 messageId: message._id,
                 author: message.author?.username,
                 args,
-                commandCount: commands.size
+                commandCount: commandsList.length
             });
-            
+
             if (!args.length) {
                 const categories = new Map<Category, CommandInfo[]>();
-                
+
                 // Group commands by category
-                for (const [_, cmd] of commands) {
+                for (const cmd of commandsList) {
                     if (cmd.flags?.disabled) continue; // Skip disabled commands
-                    
+
                     if (!categories.has(cmd.category)) {
                         categories.set(cmd.category, []);
                     }
@@ -108,10 +109,10 @@ const help: ICommand = {
 
             // Detailed command help
             const commandName = args[0].toLowerCase();
-            const command = commands.get(commandName) || 
-                           Array.from(commands.values()).find(cmd => 
-                               cmd.aliases?.includes(commandName)
-                           );
+            const command = commandsMap.get(commandName) ||
+                commandsList.find(cmd =>
+                    cmd.aliases?.includes(commandName)
+                );
 
             if (!command) {
                 return message.reply({
@@ -130,7 +131,7 @@ const help: ICommand = {
                 '',
                 `**Usage:** \`${command.usage || command.name}\``,
                 `**Category:** ${command.category}`,
-                command.aliases?.length ? `**Aliases:** ${command.aliases.map(alias => `\`${alias}\``).join(', ')}` : null,
+                command.aliases?.length ? `**Aliases:** ${command.aliases.map((alias: string) => `\`${alias}\``).join(', ')}` : null,
                 flags ? `\n**Flags:**\n${flags}` : null,
                 command.permissions ? [
                     "",

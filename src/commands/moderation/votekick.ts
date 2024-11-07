@@ -12,6 +12,21 @@ const votekick: ICommand = {
     category: "Moderation",
 
     async execute(msg, args) {
+        const db = DatabaseService.getInstance();
+        const serverId = msg.channel?.server?._id;
+        
+        // Check if moderation is enabled
+        const config = await db.getServerConfig(serverId || '');
+        if (!config.features.experiments.moderation) {
+            return msg.reply({
+                embeds: [{
+                    title: "Feature Disabled",
+                    description: "Moderation commands are disabled on this server",
+                    colour: "#ff0000"
+                }]
+            });
+        }
+
         if (!args || args.length < 2) {
             return msg.reply({
                 embeds: [{
@@ -24,10 +39,10 @@ const votekick: ICommand = {
 
         try {
             const db = DatabaseService.getInstance();
-            const serverConfig = await db.getServerConfig(msg.channel?.server?._id);
+            const serverConfig = await db.getServerConfig(msg.channel?.server?._id ?? '');
 
             // Check if user is blocked
-            if (serverConfig.security.blockedUsers.includes(msg.author?._id || '')) {
+            if (serverConfig.security.blockedUsers.includes(msg.author?._id ?? '')) {
                 return msg.reply({
                     embeds: [{
                         title: "Access Denied",
@@ -45,9 +60,9 @@ const votekick: ICommand = {
                     // Clean up the search term and username for comparison
                     const searchTerm = args[0].trim();
                     const username = member.user?.username?.trim();
-                    
+
                     return member._id.user === searchTerm || // Exact ID match
-                           (username && username.toLowerCase() === searchTerm.toLowerCase()); // Case-insensitive username match
+                        (username && username.toLowerCase() === searchTerm.toLowerCase()); // Case-insensitive username match
                 });
             } catch (error) {
                 mainLogger.error("Error fetching members:", error);
@@ -109,7 +124,7 @@ const votekick: ICommand = {
             // Wait for votes with timeout
             await Promise.race([
                 new Promise(resolve => setTimeout(resolve, VOTE_DURATION)),
-                new Promise((_, reject) => setTimeout(() => 
+                new Promise((_, reject) => setTimeout(() =>
                     reject(new Error("Vote timed out")), VOTE_DURATION + 1000))
             ]);
 

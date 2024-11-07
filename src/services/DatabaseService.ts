@@ -1,63 +1,23 @@
-import { createClient, Client, ResultSet, Value, Transaction } from "@libsql/client";
-import { mainLogger } from "../utils/Logger.js";
-import { IConfiguration, UserEconomy, TodoItem, InventoryItem } from "../types.js";
-import { CircuitBreaker } from "../utils/CircuitBreaker.js";
-import { mkdir } from "fs/promises";
-import { join } from "path";
-import { existsSync } from "fs";
-import process from 'process';
-import { ProcessManager } from "../utils/ProcessManager.js";
-
-// Define row interfaces with index signatures
-interface ConfigRow extends Record<string, Value> {
-    config: Value;
-}
-
-interface EconomyRow extends Record<string, Value> {
-    user_id: Value;
-    balance: Value;
-    bank: Value;
-    inventory: Value;
-    last_daily: Value;
-    last_work: Value;
-    work_streak: Value;
-}
-
-interface TodoRow extends Record<string, Value> {
-    id: Value;
-    server_id: Value;
-    user_id: Value;
-    content: Value;
-    completed: Value;
-    created_at: Value;
-    updated_at: Value;
-}
+import { createClient, Client, Transaction } from "@libsql/client";
+import { Logger, mainLogger } from "../utils/Logger.js";
+import { AutoModConfig, IConfiguration, UserEconomy, AutoModViolation } from "../types.js";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 export class DatabaseService {
     private static instance: DatabaseService;
     private client!: Client;
+    private isInitialized: boolean = false;
     private configCache: Map<string, {
         data: IConfiguration;
         timestamp: number;
     }>;
-    private economyCache: Map<string, {
-        data: UserEconomy;
-        timestamp: number;
-    }>;
-    private dbCircuit: CircuitBreaker;
     private cleanupInterval?: NodeJS.Timeout;
-    private readonly CACHE_TTL = 300000; // 5 minutes
+    private logger: Logger;
 
     private constructor() {
         this.configCache = new Map();
-        this.economyCache = new Map();
-        this.dbCircuit = new CircuitBreaker('Database');
-        
-        // Cleanup cache every 5 minutes
-        this.cleanupInterval = setInterval(() => this.cleanupCache(), this.CACHE_TTL);
-        
-        // Add cleanup handler for process exit
-        ProcessManager.getInstance().registerCleanupFunction(() => this.destroy());
+        this.logger = Logger.getInstance("Database");
     }
 
     static getInstance(): DatabaseService {
@@ -67,524 +27,719 @@ export class DatabaseService {
         return DatabaseService.instance;
     }
 
-    async initialize(): Promise<void> {
+    public async initialize(): Promise<void> {
+        if (this.isInitialized) {
+            mainLogger.warn('Database service already initialized');
+            return;
+        }
+
+        const dbUrl = process.env.TURSO_DATABASE_URL;
+        const authToken = process.env.TURSO_AUTH_TOKEN;
+
         try {
-            // Create data directory if using local SQLite
-            if (!process.env.TURSO_DATABASE_URL) {
-                const dataDir = join(process.cwd(), 'data');
-                if (!existsSync(dataDir)) {
-                    await mkdir(dataDir, { recursive: true });
-                    mainLogger.info('Created data directory for local SQLite database');
+            if (!dbUrl) {
+                // Use local SQLite database if Turso URL is not provided
+                const __dirname = dirname(fileURLToPath(import.meta.url));
+                const dbPath = join(__dirname, '..', '..', 'data', 'silk.db');
+
+                // Create data directory if it doesn't exist
+                const dataDir = join(__dirname, '..', '..', 'data');
+                try {
+                    await import('fs/promises').then(fs =>
+                        fs.mkdir(dataDir, { recursive: true })
+                    );
+                    mainLogger.info(`Created data directory at: ${dataDir}`);
+                } catch (mkdirError) {
+                    mainLogger.error('Failed to create data directory:', mkdirError);
+                    throw mkdirError;
                 }
+
+                mainLogger.info(`Using local SQLite database at: ${dbPath}`);
+                this.client = createClient({
+                    url: `file:${dbPath}`
+                });
+            } else {
+                // Use Turso database if URL is provided
+                mainLogger.info('Using Turso database');
+                this.client = createClient({
+                    url: dbUrl,
+                    authToken
+                });
             }
 
-            // Initialize database connection
-            const url = process.env.TURSO_DATABASE_URL || 'file:data/local.db';
-            this.client = createClient({ url });
-            mainLogger.info(`Database initialized with URL: ${url.startsWith('file:') ? 'local SQLite' : 'Turso'}`);
+            // Test the connection
+            await this.client.execute('SELECT 1');
+            mainLogger.info('Database connection established');
 
-            // Initialize database tables
-            await this.initializeTables();
-            mainLogger.info('Database tables initialized successfully');
+            // Setup tables
+            await this.setupTables();
+            this.setupCleanupInterval();
+            await this.initializeAutoModTables();
+            this.isInitialized = true;
+            mainLogger.info('Database service initialized successfully');
+
         } catch (error) {
-            mainLogger.error('Failed to initialize database:', error);
+            this.isInitialized = false;
+            mainLogger.error('Failed to initialize database service:', error);
             throw error;
         }
     }
 
-    private async executeQuery<T extends Record<string, Value>>(
-        sql: string, 
-        args: any[] = []
-    ): Promise<ResultSet & { rows: T[] }> {
-        if (!this.client) {
-            throw new Error('Database not initialized');
-        }
+    private async setupTables(): Promise<void> {
+        try {
+            mainLogger.debug('Setting up database tables...');
 
-        return this.dbCircuit.execute(async () => {
-            const result = await this.client!.execute({ sql, args });
-            return result as ResultSet & { rows: T[] };
-        });
+            // Create configurations table
+            await this.client.execute(`
+                CREATE TABLE IF NOT EXISTS configurations (
+                    server_id TEXT PRIMARY KEY,
+                    prefix TEXT NOT NULL DEFAULT 's?',
+                    welcome_channel TEXT,
+                    log_channel TEXT,
+                    bot_name TEXT DEFAULT 'Silk',
+                    bot_status TEXT DEFAULT 'online',
+                    bot_cooldown INTEGER DEFAULT 3000,
+                    bot_owners TEXT,
+                    commands_enabled INTEGER DEFAULT 1,
+                    disabled_commands TEXT,
+                    dangerous_commands TEXT,
+                    feature_welcome INTEGER DEFAULT 0,
+                    feature_logging INTEGER DEFAULT 0,
+                    feature_automod INTEGER DEFAULT 1,
+                    feature_exp_moderation INTEGER DEFAULT 0,
+                    feature_exp_economy INTEGER DEFAULT 0,
+                    security_antispam INTEGER DEFAULT 1,
+                    security_max_mentions INTEGER DEFAULT 5,
+                    security_max_lines INTEGER DEFAULT 10,
+                    security_blocked_users TEXT,
+                    security_allowed_servers TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
+            // Create server_configs table for AutoMod
+            await this.client.execute(`
+                CREATE TABLE IF NOT EXISTS server_configs (
+                    server_id TEXT PRIMARY KEY,
+                    config TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
+            // Migrate existing configurations to server_configs if needed
+            await this.migrateConfigurations();
+
+            mainLogger.debug('Database tables setup completed');
+        } catch (error) {
+            mainLogger.error('Error setting up database tables:', error);
+            throw error;
+        }
+    }
+
+    private async migrateConfigurations(): Promise<void> {
+        try {
+            // Get all servers from configurations table that don't have a corresponding server_config
+            const result = await this.client.execute(`
+                SELECT c.server_id 
+                FROM configurations c
+                LEFT JOIN server_configs sc ON c.server_id = sc.server_id
+                WHERE sc.server_id IS NULL
+            `);
+
+            for (const row of result.rows) {
+                const serverId = row.server_id as string;
+                
+                // Create default AutoMod config
+                const defaultConfig = {
+                    automod: this.getDefaultAutoModConfig(),
+                    version: 1  // Add version for future migrations
+                };
+
+                // Insert into server_configs
+                await this.client.execute({
+                    sql: `
+                        INSERT INTO server_configs (server_id, config)
+                        VALUES (?, ?)
+                    `,
+                    args: [serverId, JSON.stringify(defaultConfig)]
+                });
+
+                mainLogger.info(`Migrated configuration for server: ${serverId}`);
+            }
+
+            if (result.rows.length > 0) {
+                mainLogger.info(`Successfully migrated ${result.rows.length} server configurations`);
+            }
+        } catch (error) {
+            mainLogger.error('Error during configuration migration:', error);
+            // Don't throw error to allow setup to continue
+        }
+    }
+
+    private checkInitialized(): void {
+        if (!this.isInitialized) {
+            throw new Error('Database service not initialized');
+        }
+    }
+
+    public async beginTransaction(): Promise<Transaction> {
+        this.checkInitialized();
+        return await this.client.transaction();
+    }
+
+    public async commitTransaction(transaction: Transaction): Promise<void> {
+        this.checkInitialized();
+        await transaction.commit();
+    }
+
+    public async rollbackTransaction(transaction: Transaction): Promise<void> {
+        this.checkInitialized();
+        await transaction.rollback();
+    }
+
+    // ... other database methods ...
+
+    private async flushCache(): Promise<void> {
+        try {
+            this.logger.debug('Flushing database cache...');
+            const promises: Promise<void>[] = [];
+
+            // Save all cached configurations
+            for (const [serverId, cache] of this.configCache) {
+                try {
+                    promises.push(this.updateServerConfig(serverId, cache.data));
+                } catch (error) {
+                    this.logger.error(`Error flushing config for server ${serverId}:`, error);
+                }
+            }
+
+            // Wait for all updates to complete
+            await Promise.allSettled(promises);
+            this.logger.info(`Successfully flushed ${promises.length} cached configurations`);
+
+        } catch (error) {
+            this.logger.error('Error during cache flush:', error);
+            throw error;
+        }
     }
 
     public async destroy(): Promise<void> {
         try {
-            // Check if already destroyed
-            if (!this.client) {
-                mainLogger.debug('Database service already destroyed, skipping cleanup');
-                return;
+            this.checkInitialized();
+
+            // First, stop the cleanup interval
+            if (this.cleanupInterval) {
+                clearInterval(this.cleanupInterval);
+                this.cleanupInterval = undefined;
             }
 
-            mainLogger.debug('Starting database service cleanup...');
+            // Flush all cached data to database
+            await this.flushCache();
 
-            try {
-                // Clear cleanup interval first
-                if (this.cleanupInterval) {
-                    clearInterval(this.cleanupInterval);
-                    this.cleanupInterval = undefined;
-                }
+            // Clear the cache after successful flush
+            this.configCache.clear();
 
-                // Run final cleanup before closing connection
-                await this.cleanup();
-
-                // Close database connection
-                // @ts-ignore - LibSQL client doesn't expose close method in types
-                if (typeof this.client.close === 'function') {
-                    await this.client.close();
-                }
-
-                // Use type assertion to handle nulling the client
-                (this.client as any) = null;
-
-                mainLogger.info('Database service destroyed successfully');
-            } catch (error) {
-                mainLogger.error('Error during database service cleanup:', error);
-                // Use type assertion here as well
-                (this.client as any) = null;
-                throw error;
+            // Close database connection
+            // @ts-ignore - LibSQL client doesn't expose close method in types
+            if (typeof this.client.close === 'function') {
+                await this.client.close();
             }
+
+            this.isInitialized = false;
+            this.logger.info('Database service destroyed successfully');
+
         } catch (error) {
-            mainLogger.error('Error during database service cleanup:', error);
+            this.logger.error('Error during database service cleanup:', error);
             throw error;
         }
     }
 
-    private async initializeTables(): Promise<void> {
-        // Server configs table
-        await this.client!.execute(`
-            CREATE TABLE IF NOT EXISTS server_configs (
-                server_id TEXT PRIMARY KEY,
-                config TEXT NOT NULL,
-                created_at INTEGER DEFAULT (unixepoch()),
-                updated_at INTEGER DEFAULT (unixepoch())
-            )
-        `);
-
-        // Economy table
-        await this.client!.execute(`
-            CREATE TABLE IF NOT EXISTS economy (
-                user_id TEXT PRIMARY KEY,
-                balance INTEGER DEFAULT 0,
-                bank INTEGER DEFAULT 0,
-                inventory TEXT DEFAULT '[]',
-                last_daily INTEGER DEFAULT 0,
-                last_work INTEGER DEFAULT 0,
-                work_streak INTEGER DEFAULT 0,
-                created_at INTEGER DEFAULT (unixepoch()),
-                updated_at INTEGER DEFAULT (unixepoch())
-            )
-        `);
-
-        // Todos table
-        await this.client!.execute(`
-            CREATE TABLE IF NOT EXISTS todos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                server_id TEXT NOT NULL,
-                user_id TEXT NOT NULL,
-                content TEXT NOT NULL,
-                completed BOOLEAN DEFAULT FALSE,
-                created_at INTEGER NOT NULL,
-                updated_at INTEGER NOT NULL,
-                FOREIGN KEY (server_id) REFERENCES server_configs(server_id) ON DELETE CASCADE
-            )
-        `);
-
-        // Create indexes for better performance
-        await this.client!.execute(`
-            CREATE INDEX IF NOT EXISTS idx_todos_server_id ON todos(server_id);
-            CREATE INDEX IF NOT EXISTS idx_economy_balance ON economy(balance);
-            CREATE INDEX IF NOT EXISTS idx_economy_bank ON economy(bank);
-        `);
+    private setupCleanupInterval(): void {
+        const CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+        this.cleanupInterval = setInterval(() => this.cleanup(), CLEANUP_INTERVAL);
     }
 
-    async getServerConfig(serverId: string | undefined): Promise<IConfiguration> {
-        // Check cache first
-        const cacheKey = serverId || 'global';
-        const cached = this.configCache.get(cacheKey);
-        if (cached && (Date.now() - cached.timestamp < this.CACHE_TTL)) {
-            mainLogger.debug(`Using cached config for server: ${serverId || 'global'}`);
-            return cached.data;
-        }
-
+    private async cleanup(): Promise<void> {
         try {
-            // For undefined serverId, return default config without saving
-            if (!serverId) {
-                const defaultConfig = this.getDefaultConfig();
-                this.configCache.set('global', {
-                    data: defaultConfig,
-                    timestamp: Date.now()
-                });
-                return defaultConfig;
+            this.checkInitialized();
+            const now = Date.now();
+            const CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
+            // Cleanup config cache
+            for (const [serverId, cache] of this.configCache.entries()) {
+                if (now - cache.timestamp > CACHE_TTL) {
+                    this.configCache.delete(serverId);
+                }
             }
 
-            const result = await this.executeQuery<ConfigRow>(
-                "SELECT config FROM server_configs WHERE server_id = ?",
-                [serverId]
-            );
-
-            if (result.rows.length) {
-                const configStr = result.rows[0].config?.toString();
-                if (!configStr) throw new Error("Invalid config data");
-                
-                const config = JSON.parse(configStr) as IConfiguration;
-                // Update cache
-                this.configCache.set(serverId, {
-                    data: config,
-                    timestamp: Date.now()
-                });
-                return config;
-            }
-
-            // If no config exists, create default
-            mainLogger.info(`No config found for server: ${serverId}, creating default`);
-            const defaultConfig = await this.createDefaultConfig(serverId);
-            return defaultConfig;
+            mainLogger.debug('Database cleanup completed');
         } catch (error) {
-            mainLogger.error(`Error getting server config: ${error}`);
+            mainLogger.error('Error during database cleanup:', error);
+        }
+    }
+
+    async getUserEconomy(userId: string): Promise<UserEconomy> {
+        this.checkInitialized();
+        try {
+            const result = await this.client.execute({
+                sql: "SELECT * FROM economy WHERE user_id = ?",
+                args: [userId]
+            });
+
+            if (!result.rows[0]) {
+                // Create default economy for new user
+                const defaultEconomy: UserEconomy = {
+                    user_id: userId,
+                    balance: 0,
+                    bank: 0,
+                    lastDaily: null,
+                    lastWork: null,
+                    workStreak: 0,
+                    inventory: [],
+                    total: 0
+                };
+
+                await this.client.execute({
+                    sql: `INSERT INTO economy (
+                        user_id, balance, bank, work_streak, 
+                        last_daily, last_work
+                    ) VALUES (?, ?, ?, ?, ?, ?)`,
+                    args: [
+                        userId,
+                        defaultEconomy.balance,
+                        defaultEconomy.bank,
+                        defaultEconomy.workStreak,
+                        null,
+                        null
+                    ]
+                });
+
+                return defaultEconomy;
+            }
+
+            const row = result.rows[0];
+            return {
+                user_id: row.user_id as string,
+                balance: Number(row.balance),
+                bank: Number(row.bank),
+                lastDaily: row.last_daily ? new Date(String(row.last_daily)) : null,
+                lastWork: row.last_work ? new Date(String(row.last_work)) : null,
+                workStreak: Number(row.work_streak || 0),
+                inventory: (row.inventory as string || "").split(",").filter(Boolean),
+                total: Number(row.balance) + Number(row.bank)
+            };
+        } catch (error) {
+            mainLogger.error(`Error getting user economy for ${userId}:`, error);
             throw error;
         }
     }
 
-    private getDefaultConfig(): IConfiguration {
-        return {
+    async updateUserEconomy(userId: string, economy: UserEconomy): Promise<void> {
+        this.checkInitialized();
+        try {
+            await this.client.execute({
+                sql: `UPDATE economy 
+                      SET balance = ?, bank = ?, work_streak = ?,
+                          last_daily = ?, last_work = ?, 
+                          updated_at = CURRENT_TIMESTAMP 
+                      WHERE user_id = ?`,
+                args: [
+                    economy.balance,
+                    economy.bank,
+                    economy.workStreak,
+                    economy.lastDaily ? economy.lastDaily.toISOString() : null,
+                    economy.lastWork ? economy.lastWork.toISOString() : null,
+                    userId
+                ]
+            });
+        } catch (error) {
+            mainLogger.error(`Error updating user economy for ${userId}:`, error);
+            throw error;
+        }
+    }
+
+    async getLeaderboard(page: number = 1, perPage: number = 10): Promise<UserEconomy[]> {
+        this.checkInitialized();
+        try {
+            const offset = (page - 1) * perPage;
+            const result = await this.client.execute({
+                sql: `SELECT * FROM economy 
+                      ORDER BY (balance + bank) DESC 
+                      LIMIT ? OFFSET ?`,
+                args: [perPage, offset]
+            });
+
+            return result.rows.map(row => ({
+                user_id: row.user_id as string,
+                balance: Number(row.balance),
+                bank: Number(row.bank),
+                lastDaily: row.last_daily ? new Date(String(row.last_daily)) : null,
+                lastWork: row.last_work ? new Date(String(row.last_work)) : null,
+                workStreak: Number(row.work_streak || 0),
+                inventory: (row.inventory as string || "").split(",").filter(Boolean),
+                total: Number(row.balance) + Number(row.bank)
+            }));
+        } catch (error) {
+            mainLogger.error("Error getting leaderboard:", error);
+            throw error;
+        }
+    }
+
+    async getServerConfig(serverId: string): Promise<IConfiguration> {
+        this.checkInitialized();
+        try {
+            // Check cache first
+            const cached = this.configCache.get(serverId);
+            if (cached && Date.now() - cached.timestamp < 5 * 60 * 1000) {
+                return cached.data;
+            }
+
+            // First check server_configs table
+            const serverConfigResult = await this.client.execute({
+                sql: "SELECT config FROM server_configs WHERE server_id = ?",
+                args: [serverId]
+            });
+
+            if (serverConfigResult.rows[0]) {
+                // Server has a config in server_configs
+                const config = JSON.parse(serverConfigResult.rows[0].config as string);
+                
+                // Ensure all required properties exist
+                const validatedConfig: IConfiguration = {
+                    prefix: config.prefix || "s?",
+                    welcomeChannel: config.welcomeChannel || null,
+                    logChannel: config.logChannel || null,
+                    bot: {
+                        name: config.bot?.name || "Silk",
+                        status: config.bot?.status || "online",
+                        prefix: config.bot?.prefix || "s?",
+                        defaultCooldown: config.bot?.defaultCooldown || 3000,
+                        owners: config.bot?.owners || []
+                    },
+                    commands: {
+                        enabled: config.commands?.enabled ?? true,
+                        disabled: config.commands?.disabled || [],
+                        dangerous: config.commands?.dangerous || []
+                    },
+                    features: {
+                        welcome: config.features?.welcome ?? false,
+                        logging: config.features?.logging ?? false,
+                        automod: config.features?.automod ?? true,
+                        experiments: {
+                            moderation: config.features?.experiments?.moderation ?? false,
+                            economy: config.features?.experiments?.economy ?? false
+                        }
+                    },
+                    security: {
+                        antiSpam: config.security?.antiSpam ?? true,
+                        maxMentions: config.security?.maxMentions || 5,
+                        maxLines: config.security?.maxLines || 10,
+                        blockedUsers: config.security?.blockedUsers || [],
+                        allowedServers: config.security?.allowedServers || []
+                    },
+                    automod: {
+                        enabled: config.automod?.enabled ?? false,
+                        filters: {
+                            spam: config.automod?.filters?.spam ?? true,
+                            invites: config.automod?.filters?.invites ?? true,
+                            links: config.automod?.filters?.links ?? true,
+                            mentions: config.automod?.filters?.mentions ?? true,
+                            caps: config.automod?.filters?.caps ?? true
+                        },
+                        thresholds: {
+                            maxMentions: config.automod?.thresholds?.maxMentions || 5,
+                            maxCaps: config.automod?.thresholds?.maxCaps || 70,
+                            messageBurst: config.automod?.thresholds?.messageBurst || 5
+                        },
+                        whitelist: {
+                            users: config.automod?.whitelist?.users || [],
+                            roles: config.automod?.whitelist?.roles || [],
+                            channels: config.automod?.whitelist?.channels || [],
+                            links: config.automod?.whitelist?.links || []
+                        },
+                        actions: {
+                            delete: config.automod?.actions?.delete ?? true,
+                            warn: config.automod?.actions?.warn ?? true,
+                            timeout: config.automod?.actions?.timeout || 5
+                        }
+                    }
+                };
+
+                // Cache the validated config
+                this.configCache.set(serverId, {
+                    data: validatedConfig,
+                    timestamp: Date.now()
+                });
+
+                return validatedConfig;
+            }
+
+            // If no configuration exists, create a new one
+            return await this.createDefaultConfig(serverId);
+        } catch (error) {
+            mainLogger.error(`Error getting server config for ${serverId}:`, error);
+            throw error;
+        }
+    }
+
+    async createDefaultConfig(serverId: string): Promise<IConfiguration> {
+        this.checkInitialized();
+        const defaultConfig: IConfiguration = {
+            prefix: "s?",
+            welcomeChannel: null,
+            logChannel: null,
             bot: {
-                prefix: 's?',
-                owners: [],
-                defaultCooldown: 3000
+                name: "Silk",
+                status: "online",
+                prefix: "s?",
+                defaultCooldown: 3000,
+                owners: []
             },
             commands: {
-                dangerous: [],
-                disabled: []
+                enabled: true,
+                disabled: [],
+                dangerous: []
             },
             features: {
+                welcome: false,
+                logging: false,
+                automod: true,
                 experiments: {
                     moderation: false,
                     economy: false
                 }
             },
             security: {
+                antiSpam: true,
+                maxMentions: 5,
+                maxLines: 10,
                 blockedUsers: [],
                 allowedServers: []
+            },
+            automod: {
+                enabled: false,
+                filters: {
+                    spam: true,
+                    invites: true,
+                    links: true,
+                    mentions: true,
+                    caps: true
+                },
+                thresholds: {
+                    maxMentions: 5,
+                    maxCaps: 70,
+                    messageBurst: 5
+                },
+                whitelist: {
+                    users: [],
+                    roles: [],
+                    channels: [],
+                    links: []
+                },
+                actions: {
+                    delete: true,
+                    warn: true,
+                    timeout: 5
+                }
             }
         };
-    }
 
-    async getUserEconomy(userId: string): Promise<UserEconomy> {
-        const result = await this.executeQuery<EconomyRow>(
-            "SELECT *, (balance + bank) as total FROM economy WHERE user_id = ?",
-            [userId]
-        );
-
-        if (!result.rows.length) {
-            return {
-                user_id: userId,
-                balance: 0,
-                bank: 0,
-                inventory: [],
-                lastDaily: 0,
-                lastWork: 0,
-                workStreak: 0,
-                total: 0
-            };
-        }
-
-        const row = result.rows[0];
-        const inventoryStr = row.inventory?.toString() || '[]';
-        const inventory = JSON.parse(inventoryStr) as InventoryItem[];
-
-        const economy: UserEconomy = {
-            user_id: userId,
-            balance: Number(row.balance),
-            bank: Number(row.bank),
-            inventory,
-            lastDaily: Number(row.last_daily),
-            lastWork: Number(row.last_work),
-            workStreak: Number(row.work_streak),
-            total: Number(row.balance) + Number(row.bank)
-        };
-
-        this.economyCache.set(userId, {
-            data: economy,
-            timestamp: Date.now()
-        });
-
-        return economy;
-    }
-
-    async updateUserEconomy(userId: string, economy: UserEconomy): Promise<void> {
-        await this.executeQuery(
-            `
-                INSERT OR REPLACE INTO economy (
-                    user_id, balance, bank, inventory, 
-                    last_daily, last_work, work_streak, 
-                    updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, unixepoch())
-            `,
-            [
-                userId,
-                economy.balance,
-                economy.bank,
-                JSON.stringify(economy.inventory),
-                economy.lastDaily,
-                economy.lastWork,
-                economy.workStreak
-            ]
-        );
-    }
-
-    async updateServerConfig(serverId: string | undefined, config: IConfiguration): Promise<void> {
-        const cacheKey = serverId || 'global';
-        
         try {
-            await this.executeQuery(
-                "INSERT OR REPLACE INTO server_configs (server_id, config) VALUES (?, ?)",
-                [serverId, JSON.stringify(config)]
-            );
-
-            // Update cache
-            this.configCache.set(cacheKey, {
-                data: config,
-                timestamp: Date.now()
+            await this.client.execute({
+                sql: `INSERT INTO configurations (
+                    server_id, prefix, bot_name, bot_status, bot_cooldown, bot_owners,
+                    commands_enabled, disabled_commands, dangerous_commands,
+                    feature_welcome, feature_logging, feature_automod,
+                    feature_exp_moderation, feature_exp_economy,
+                    security_antispam, security_max_mentions, security_max_lines,
+                    security_blocked_users, security_allowed_servers
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                args: [
+                    serverId,
+                    defaultConfig.prefix,
+                    defaultConfig.bot.name,
+                    defaultConfig.bot.status,
+                    defaultConfig.bot.defaultCooldown,
+                    defaultConfig.bot.owners.join(","),
+                    defaultConfig.commands.enabled ? 1 : 0,
+                    defaultConfig.commands.disabled.join(","),
+                    defaultConfig.commands.dangerous.join(","),
+                    defaultConfig.features.welcome ? 1 : 0,
+                    defaultConfig.features.logging ? 1 : 0,
+                    defaultConfig.features.automod ? 1 : 0,
+                    defaultConfig.features.experiments.moderation ? 1 : 0,
+                    defaultConfig.features.experiments.economy ? 1 : 0,
+                    defaultConfig.security.antiSpam ? 1 : 0,
+                    defaultConfig.security.maxMentions,
+                    defaultConfig.security.maxLines,
+                    defaultConfig.security.blockedUsers.join(","),
+                    defaultConfig.security.allowedServers.join(",")
+                ]
             });
 
-            mainLogger.debug(`Updated config for server: ${serverId}`);
-        } catch (error) {
-            mainLogger.error(`Error updating server config: ${error}`);
-            throw error;
-        }
-    }
-
-    async createDefaultConfig(serverId: string): Promise<IConfiguration> {
-        const defaultConfig = this.getDefaultConfig();
-
-        try {
-            await this.executeQuery(
-                "INSERT INTO server_configs (server_id, config) VALUES (?, ?)",
-                [serverId, JSON.stringify(defaultConfig)]
-            );
-
-            // Update cache
             this.configCache.set(serverId, {
                 data: defaultConfig,
                 timestamp: Date.now()
             });
 
-            mainLogger.info(`Created default config for server: ${serverId}`);
             return defaultConfig;
         } catch (error) {
-            mainLogger.error(`Error creating default config: ${error}`);
+            mainLogger.error(`Error creating default config for ${serverId}:`, error);
             throw error;
         }
     }
 
-    // For leaderboard command
-    async getLeaderboard(page: number, limit: number): Promise<UserEconomy[]> {
-        const result = await this.executeQuery<EconomyRow>(
-            `SELECT *, (balance + bank) as total 
-             FROM economy 
-             ORDER BY (balance + bank) DESC 
-             LIMIT ? OFFSET ?`,
-            [limit, (page - 1) * limit]
-        );
+    async updateServerConfig(serverId: string, config: IConfiguration): Promise<void> {
+        this.checkInitialized();
+        try {
+            // Update server_configs table
+            await this.client.execute({
+                sql: `INSERT INTO server_configs (server_id, config) 
+                      VALUES (?, ?) 
+                      ON CONFLICT(server_id) DO UPDATE SET 
+                      config = excluded.config,
+                      updated_at = CURRENT_TIMESTAMP`,
+                args: [serverId, JSON.stringify(config)]
+            });
 
-        return result.rows.map(row => ({
-            user_id: row.user_id?.toString() || '',
-            balance: Number(row.balance),
-            bank: Number(row.bank),
-            inventory: JSON.parse(row.inventory?.toString() || '[]'),
-            lastDaily: Number(row.last_daily),
-            lastWork: Number(row.last_work),
-            workStreak: Number(row.work_streak),
-            total: Number(row.balance) + Number(row.bank)
-        }));
+            // Update cache
+            this.configCache.set(serverId, {
+                data: config,
+                timestamp: Date.now()
+            });
+
+            mainLogger.debug(`Updated configuration for server ${serverId}`);
+        } catch (error) {
+            mainLogger.error(`Error updating server config for ${serverId}:`, error);
+            throw error;
+        }
     }
 
-    // Todo Methods
-    async getTodos(serverId: string): Promise<TodoItem[]> {
-        const result = await this.executeQuery<TodoRow>(
-            `SELECT * FROM todos WHERE server_id = ? ORDER BY completed ASC, created_at DESC`,
-            [serverId]
-        );
+    async getAutoModConfig(serverId?: string): Promise<AutoModConfig> {
+        try {
+            if (!serverId) {
+                return this.getDefaultAutoModConfig();
+            }
 
-        return result.rows.map(row => ({
-            id: Number(row.id),
-            server_id: row.server_id?.toString() || '',
-            user_id: row.user_id?.toString() || '',
-            content: row.content?.toString() || '',
-            completed: Boolean(row.completed),
-            created_at: Number(row.created_at),
-            updated_at: Number(row.updated_at)
-        }));
+            // First, ensure server has a config
+            await this.ensureServerConfig(serverId);
+
+            const result = await this.client.execute({
+                sql: 'SELECT config FROM server_configs WHERE server_id = ?',
+                args: [serverId]
+            });
+
+            if (!result.rows[0]) {
+                return this.getDefaultAutoModConfig();
+            }
+
+            const serverConfig = JSON.parse(result.rows[0].config as string);
+            return {
+                ...this.getDefaultAutoModConfig(),
+                ...serverConfig.automod
+            };
+        } catch (error) {
+            this.logger.error('Error getting automod config:', error);
+            return this.getDefaultAutoModConfig();
+        }
     }
 
-    async createTodo(serverId: string, userId: string, content: string): Promise<TodoItem> {
-        const now = Date.now();
-        const result = await this.executeQuery(
-            `
-                INSERT INTO todos (server_id, user_id, content, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-                RETURNING *
-            `,
-            [serverId, userId, content, now, now]
-        );
-
-        const row = result.rows[0];
+    private getDefaultAutoModConfig(): AutoModConfig {
         return {
-            id: Number(row.id),
-            server_id: row.server_id?.toString() || '',
-            user_id: row.user_id?.toString() || '',
-            content: row.content?.toString() || '',
-            completed: Boolean(row.completed),
-            created_at: Number(row.created_at),
-            updated_at: Number(row.updated_at)
+            enabled: false,
+            filters: {
+                spam: true,
+                invites: true,
+                links: true,
+                mentions: true,
+                caps: true
+            },
+            thresholds: {
+                maxMentions: 5,
+                maxCaps: 70,    // percentage
+                maxLines: 10,
+                messageInterval: 5000,  // 5 seconds
+                messageBurst: 5        // messages per interval
+            },
+            actions: {
+                warn: true,
+                delete: true,
+                timeout: 5     // 5 minutes
+            },
+            whitelist: {
+                users: [],
+                roles: [],
+                channels: [],
+                links: []
+            }
         };
     }
 
-    async updateTodo(todoId: number, serverId: string, content: string): Promise<boolean> {
-        return this.executeModification(
-            `UPDATE todos SET content = ?, updated_at = ? WHERE id = ? AND server_id = ?`,
-            [content, Date.now(), todoId, serverId]
-        );
-    }
-
-    async toggleTodo(todoId: number, serverId: string): Promise<boolean> {
-        return this.executeModification(
-            `UPDATE todos SET completed = NOT completed, updated_at = ? WHERE id = ? AND server_id = ?`,
-            [Date.now(), todoId, serverId]
-        );
-    }
-
-    async removeTodo(todoId: number, serverId: string): Promise<boolean> {
-        return this.executeModification(
-            'DELETE FROM todos WHERE id = ? AND server_id = ?',
-            [todoId, serverId]
-        );
-    }
-
-    async removeAllTodos(serverId: string): Promise<number> {
-        const result = await this.executeQuery<Record<string, Value>>(
-            'DELETE FROM todos WHERE server_id = ?',
-            [serverId]
-        );
-        return result.rowsAffected;
-    }
-
-    // Add batch operations for performance
-    async batchUpdateEconomy(updates: Array<{ userId: string, economy: UserEconomy }>): Promise<void> {
-        const values = updates.map(update => [
-            update.userId,
-            update.economy.balance,
-            update.economy.bank,
-            JSON.stringify(update.economy.inventory),
-            update.economy.lastDaily,
-            update.economy.lastWork,
-            update.economy.workStreak,
-            Date.now()
-        ]).flat();
-
-        const placeholders = updates.map(() => "(?, ?, ?, ?, ?, ?, ?, ?)").join(", ");
-
-        await this.executeQuery(
-            `
-                INSERT OR REPLACE INTO economy (
-                    user_id, balance, bank, inventory, 
-                    last_daily, last_work, work_streak, 
-                    updated_at
-                ) VALUES ${placeholders}
-            `,
-            values
-        );
-
-        // Update cache
-        updates.forEach(update => {
-            this.economyCache.set(update.userId, {
-                data: update.economy,
-                timestamp: Date.now()
-            });
-        });
-    }
-
-    // Add cleanup methods
-    async cleanup(): Promise<void> {
+    private async ensureServerConfig(serverId: string): Promise<void> {
         try {
-            mainLogger.debug('Starting database cleanup...');
-            
-            // Clean up old records
-            const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
-            
-            // Delete old server configs that haven't been updated
-            const deletedConfigs = await this.executeQuery(
-                "DELETE FROM server_configs WHERE updated_at < ?",
-                [thirtyDaysAgo]
-            );
-            
-            // Delete old economy records with zero balance and no activity
-            const deletedEconomy = await this.executeQuery(
-                `DELETE FROM economy 
-                 WHERE balance = 0 
-                 AND bank = 0 
-                 AND last_daily < ? 
-                 AND last_work < ?`,
-                [thirtyDaysAgo, thirtyDaysAgo]
-            );
-            
-            // Delete completed todos older than 30 days
-            const deletedTodos = await this.executeQuery(
-                "DELETE FROM todos WHERE completed = TRUE AND updated_at < ?",
-                [thirtyDaysAgo]
-            );
-
-            mainLogger.info('Database cleanup completed:', {
-                configs: deletedConfigs.rowsAffected,
-                economy: deletedEconomy.rowsAffected,
-                todos: deletedTodos.rowsAffected
+            const result = await this.client.execute({
+                sql: 'SELECT 1 FROM server_configs WHERE server_id = ?',
+                args: [serverId]
             });
 
+            if (!result.rows[0]) {
+                // Create new server config with default values
+                const defaultConfig = {
+                    automod: this.getDefaultAutoModConfig(),
+                    version: 1
+                };
+
+                await this.client.execute({
+                    sql: 'INSERT INTO server_configs (server_id, config) VALUES (?, ?)',
+                    args: [serverId, JSON.stringify(defaultConfig)]
+                });
+
+                this.logger.info(`Created new server config for: ${serverId}`);
+            }
         } catch (error) {
-            mainLogger.error('Error during database cleanup:', error);
+            this.logger.error('Error ensuring server config:', error);
             throw error;
         }
     }
 
-    private cleanupCache(): void {
-        const now = Date.now();
-        let cleanedEntries = 0;
-        
-        // Cleanup config cache
-        for (const [key, value] of this.configCache.entries()) {
-            if (now - value.timestamp > this.CACHE_TTL) {
-                this.configCache.delete(key);
-                cleanedEntries++;
-            }
+    async recordAutoModViolation(violation: AutoModViolation): Promise<void> {
+        try {
+            await this.client.execute({
+                sql: `
+                    INSERT INTO automod_violations (
+                        user_id, channel_id, message_id, 
+                        violation_type, details, timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                `,
+                args: [
+                    violation.userId,
+                    violation.channelId,
+                    violation.messageId,
+                    violation.type,
+                    violation.details || '',
+                    violation.timestamp
+                ]
+            });
+        } catch (error) {
+            this.logger.error('Error recording automod violation:', error);
+            throw error;
         }
-
-        // Cleanup economy cache
-        for (const [key, value] of this.economyCache.entries()) {
-            if (now - value.timestamp > this.CACHE_TTL) {
-                this.economyCache.delete(key);
-                cleanedEntries++;
-            }
-        }
-
-        if (cleanedEntries > 0) {
-            mainLogger.debug(`Cleaned up ${cleanedEntries} cache entries`);
-        }
     }
 
-    // For methods returning rowsAffected
-    private async executeModification(sql: string, args: any[] = []): Promise<boolean> {
-        const result = await this.executeQuery<Record<string, Value>>(sql, args);
-        return result.rowsAffected > 0;
-    }
-
-    async beginTransaction(): Promise<Transaction> {
-        return await this.client.transaction();
-    }
-
-    async commitTransaction(transaction: Transaction): Promise<void> {
-        await transaction.commit();
-    }
-
-    async rollbackTransaction(transaction: Transaction): Promise<void> {
-        await transaction.rollback();
+    private async initializeAutoModTables(): Promise<void> {
+        await this.client.execute(`
+            CREATE TABLE IF NOT EXISTS automod_violations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                message_id TEXT NOT NULL,
+                violation_type TEXT NOT NULL,
+                details TEXT,
+                timestamp INTEGER NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
     }
 }
