@@ -1,6 +1,6 @@
 {
     "name": "slik",
-    "version": "2.2.1",
+    "version": "2.2.2",
     "description": "Multi-purpose revolt bot",
     "main": "dist/index.js",
     "type": "module",
