@@ -176,12 +176,12 @@ export class VersionManager {
         try {
             mainLogger.debug("Generating changelog with Gemini");
             const model = this.genAI.getGenerativeModel({
-                model: "gemini-1.5-pro-latest",
+                model: "gemini-1.5-pro",
             });
 
             const prompt = `
             Generate a changelog from these git commits. Format your response as a simple list.
-            Each change must start with a hyphen (-) and be on a new line.
+            Each change must start with a hyphen (-) and be on a new line. Also try to be concise and accurate.
             
             Focus on:
             - New features
@@ -192,7 +192,8 @@ export class VersionManager {
             Example format:
             - Added new feature X
             - Fixed bug with Y
-            - Improved performance of Z
+            - Removed feature Z
+            - Improved performance of W
             
             Commit Messages:
             ${commitMessages}
