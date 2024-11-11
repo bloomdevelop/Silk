@@ -19,15 +19,15 @@ const changelog: ICommand = {
                 "Generating changelog data...",
             );
 
-            const currentVersion = versionManager.getCurrentVersion();
-            const changelogData = versionManager.getChangelog();
+            const currentVersion = (await versionManager).getCurrentVersion();
+            const changelogData = (await versionManager).getChangelog();
 
             // Delete loading message
             await loadingMessage?.delete();
 
             if (args.length > 0) {
                 const requestedVersion = args[0];
-                const versionEntry = changelogData.find(
+                const versionEntry = (await changelogData).find(
                     (entry) => entry.version === requestedVersion,
                 );
 
@@ -63,7 +63,7 @@ const changelog: ICommand = {
                 return;
             }
 
-            const recentVersions = changelogData.slice(0, 5);
+            const recentVersions = (await changelogData).slice(0, 5);
             await msg.reply({
                 embeds: [
                     {

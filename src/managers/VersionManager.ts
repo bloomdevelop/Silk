@@ -18,18 +18,18 @@ export class VersionManager {
     readonly packageJsonPath: string;
     private genAI: GoogleGenerativeAI;
     private changelogData: ChangelogEntry[] = [];
+    private initialized: boolean = false;
 
     private constructor() {
         this.packageJsonPath = join(__dirname, "../../package.json");
         this.genAI = new GoogleGenerativeAI(
             process.env.GEMINI_API_KEY || "",
         );
-
-        // Initialize with current version and git changes
-        this.initializeChangelog();
     }
 
     private async initializeChangelog(): Promise<void> {
+        if (this.initialized) return;
+
         const version = this.getPackageVersion();
         const changes = await this.getGitChanges();
 
@@ -40,51 +40,114 @@ export class VersionManager {
         };
 
         this.changelogData = [initialEntry];
+        this.initialized = true;
+    }
+
+    public static async getInstance(): Promise<VersionManager> {
+        if (!VersionManager.instance) {
+            VersionManager.instance = new VersionManager();
+            await VersionManager.instance.initializeChangelog();
+        }
+        return VersionManager.instance;
     }
 
     private async getGitChanges(): Promise<string[]> {
         try {
-            // Get latest commit message
-            const latestCommit = execSync("git log -1 --pretty=%B")
-                .toString()
-                .trim();
-
-            // Get changed files and their diffs
-            const changedFiles = execSync(
-                "git diff-tree --no-commit-id --name-only -r HEAD",
-            )
-                .toString()
-                .trim()
-                .split("\n");
-
-            // Get complete diff for analysis
-            const diff = execSync("git diff HEAD^!").toString();
-
-            // Include changed files in the analysis
-            const fullContext = `
-                Commit Message: ${latestCommit}
+            // Get the latest commit message
+            const latestCommit = execSync("git log -1 --pretty=%B").toString().trim();
+            mainLogger.debug("Latest commit:", latestCommit);
+            
+            // Check for version bump pattern
+            const versionBumpMatch = latestCommit.match(/chore: bump version (\d+\.\d+\.\d+)/);
+            
+            if (versionBumpMatch) {
+                const version = versionBumpMatch[1];
+                mainLogger.debug(`Detected version bump to ${version}`);
                 
-                Changed Files:
-                ${changedFiles.join("\n")}
+                // Find the previous version bump commit
+                const lastVersionBumpCommand = "git log --grep='chore: bump version' -2 --format=%H";
+                const commits = execSync(lastVersionBumpCommand).toString().trim().split('\n');
                 
-                Changes:
-                ${diff}
-            `;
+                let commitMessages;
+                if (commits.length > 1) {
+                    // Get changes between the previous version bump and this one
+                    commitMessages = execSync(`git log --pretty=format:"%s" ${commits[1]}..${commits[0]}^`).toString().trim().split('\n');
+                } else {
+                    // Get all commits up to this version bump
+                    commitMessages = execSync('git log --pretty=format:"%s" HEAD^').toString().trim().split('\n');
+                }
+                
+                // Filter out version bump commits and empty messages
+                commitMessages = commitMessages
+                    .filter(msg => !msg.includes('chore: bump version') && msg.trim().length > 0)
+                    .slice(0, 10); // Limit to 10 most recent commits
+                
+                mainLogger.debug("Filtered commit messages:", commitMessages);
+                
+                // Get changed files and diff
+                const changedFiles = execSync(
+                    commits.length > 1 
+                        ? `git diff --name-only ${commits[1]} ${commits[0]}^`
+                        : 'git diff --name-only HEAD^'
+                ).toString().trim().split('\n');
+                
+                const diff = execSync(
+                    commits.length > 1
+                        ? `git diff ${commits[1]} ${commits[0]}^`
+                        : 'git diff HEAD^'
+                ).toString();
 
-            return await this.generateChangesWithGemini(
-                latestCommit,
-                fullContext,
-            );
+                const fullContext = `
+                    Version: ${version}
+                    
+                    Commit Messages:
+                    ${commitMessages.join("\n")}
+                    
+                    Changed Files:
+                    ${changedFiles.join("\n")}
+                    
+                    Changes:
+                    ${diff}
+                `;
+
+                mainLogger.debug("Sending to Gemini for version bump analysis");
+                const changes = await this.generateChangesWithGemini(
+                    commitMessages.join("\n"),
+                    fullContext
+                );
+                
+                // Limit to 6 most significant changes
+                return changes.slice(0, 6);
+            } else {
+                // Regular commit handling (unchanged)
+                mainLogger.debug("Regular commit detected");
+                const changedFiles = execSync(
+                    "git diff-tree --no-commit-id --name-only -r HEAD"
+                ).toString().trim().split('\n');
+
+                const diff = execSync("git diff HEAD^!").toString();
+
+                const fullContext = `
+                    Commit Message: ${latestCommit}
+                    
+                    Changed Files:
+                    ${changedFiles.join("\n")}
+                    
+                    Changes:
+                    ${diff}
+                `;
+
+                const changes = await this.generateChangesWithGemini(
+                    latestCommit,
+                    fullContext
+                );
+                
+                return changes.slice(0, 6); // Limit regular changes to 6 as well
+            }
         } catch (error) {
             mainLogger.error("Error getting git changes:", error);
             return ["Code updates and improvements"];
         }
-    }
-    public static getInstance(): VersionManager {
-        if (!VersionManager.instance) {
-            VersionManager.instance = new VersionManager();
-        }
-        return VersionManager.instance;
     }
 
     private getPackageVersion(): string {
@@ -99,52 +162,83 @@ export class VersionManager {
         }
     }
 
-    public getChangelog(): ChangelogEntry[] {
+    public async getChangelog(): Promise<ChangelogEntry[]> {
+        if (!this.initialized) {
+            await this.initializeChangelog();
+        }
         return this.changelogData;
     }
 
     private async generateChangesWithGemini(
-        oldCode: string,
-        newCode: string,
+        commitMessages: string,
+        fullContext: string,
     ): Promise<string[]> {
         try {
+            mainLogger.debug("Generating changelog with Gemini");
             const model = this.genAI.getGenerativeModel({
-                model: "gemini-1.5-flash",
+                model: "gemini-1.5-pro-latest",
             });
 
             const prompt = `
-            Analyze the following code changes and generate a clear, concise changelog.
-            Focus on significant changes like new features, improvements, and fixes.
-            Format each change as a bullet point.
+            Generate a changelog from these git commits. Format your response as a simple list with each item on a new line starting with "- ".
+            Focus on:
+            - New features
+            - Bug fixes
+            - Improvements
+            - Breaking changes
+
+            Make each point clear and concise. Do not use nested bullets or headers.
             
-            Old code:
-            ${oldCode}
+            Example format:
+            - Added new feature X
+            - Fixed bug with Y
+            - Improved performance of Z
             
-            New code:
-            ${newCode}
+            Commit Messages:
+            ${commitMessages}
+            
+            Additional Context:
+            ${fullContext}
             `;
 
+            mainLogger.debug("Sending prompt to Gemini");
             const result = await model.generateContent(prompt);
+            mainLogger.debug("Received response from Gemini");
+            
             const response = result.response;
-            const changes = response
-                .text()
-                .split("\n")
-                .filter(
-                    (line) =>
-                        line.trim().startsWith("•") ||
-                        line.trim().startsWith("-"),
-                )
-                .map((line) => line.replace(/^[•-]\s*/, "").trim())
-                .filter((line) => line.length > 0);
+            const text = response.text();
+            mainLogger.debug("Raw Gemini response:", text);
 
-            return changes.length > 0
-                ? changes
-                : ["Various code improvements and optimizations"];
+            // Extract all lines that start with - or •, including those with whitespace before
+            const changes = text
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.startsWith('-') || line.startsWith('•') || line.startsWith('*'))
+                .map(line => {
+                    // Remove any bullet point character and trim
+                    return line
+                        .replace(/^[-•*]\s*\*?\*?\s*/, '')  // Remove bullet points and asterisks
+                        .replace(/^["']|["']$/g, '')        // Remove quotes if present
+                        .trim();
+                })
+                .filter(line => 
+                    line.length > 0 && 
+                    !line.includes('##') &&                 // Exclude headers
+                    !line.startsWith('**') &&              // Exclude bold markers
+                    !line.toLowerCase().includes('changelog') // Exclude changelog mentions
+                );
+
+            mainLogger.debug("Processed changes:", changes);
+
+            if (changes.length === 0) {
+                mainLogger.warn("No changes extracted from Gemini response, using default message");
+                return ["Various code improvements and optimizations"];
+            }
+
+            // Limit to 6 most significant changes
+            return changes.slice(0, 6);
         } catch (error) {
-            mainLogger.error(
-                "Error generating changes with Gemini:",
-                error,
-            );
+            mainLogger.error("Error generating changes with Gemini:", error);
             return ["Code updates and improvements"];
         }
     }
