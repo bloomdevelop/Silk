@@ -180,15 +180,15 @@ export class VersionManager {
             });
 
             const prompt = `
-            Generate a changelog from these git commits. Format your response as a simple list with each item on a new line starting with "- ".
+            Generate a changelog from these git commits. Format your response as a simple list.
+            Each change must start with a hyphen (-) and be on a new line.
+            
             Focus on:
             - New features
             - Bug fixes
             - Improvements
             - Breaking changes
 
-            Make each point clear and concise. Do not use nested bullets or headers.
-            
             Example format:
             - Added new feature X
             - Fixed bug with Y
@@ -203,32 +203,34 @@ export class VersionManager {
 
             mainLogger.debug("Sending prompt to Gemini");
             const result = await model.generateContent(prompt);
-            mainLogger.debug("Received response from Gemini");
-            
-            const response = result.response;
-            const text = response.text();
+            const text = result.response.text();
             mainLogger.debug("Raw Gemini response:", text);
 
-            // Extract all lines that start with - or •, including those with whitespace before
-            const changes = text
+            // First, split into lines and process each line
+            let changes = text
                 .split('\n')
-                .map(line => line.trim())
-                .filter(line => line.startsWith('-') || line.startsWith('•') || line.startsWith('*'))
                 .map(line => {
-                    // Remove any bullet point character and trim
+                    // Convert any bullet point style to a hyphen
+                    line = line.replace(/^[•*]\s*/, '- ');
+                    return line.trim();
+                })
+                .filter(line => line.startsWith('-'))  // Keep only bullet points
+                .map(line => {
+                    // Clean up the line
                     return line
-                        .replace(/^[-•*]\s*\*?\*?\s*/, '')  // Remove bullet points and asterisks
-                        .replace(/^["']|["']$/g, '')        // Remove quotes if present
+                        .replace(/^-\s*/, '')         // Remove the bullet point
+                        .replace(/^["']|["']$/g, '')  // Remove quotes
+                        .replace(/\*\*/g, '')         // Remove bold markers
                         .trim();
                 })
-                .filter(line => 
-                    line.length > 0 && 
-                    !line.includes('##') &&                 // Exclude headers
-                    !line.startsWith('**') &&              // Exclude bold markers
-                    !line.toLowerCase().includes('changelog') // Exclude changelog mentions
-                );
+                .filter(line => {
+                    return line.length > 0 &&
+                        !line.toLowerCase().includes('changelog:') &&
+                        !line.match(/^v\d+\.\d+\.\d+/) &&     // Filter version headers
+                        !line.match(/^[A-Z]+:$/);             // Filter section headers
+                });
 
-            mainLogger.debug("Processed changes:", changes);
+            mainLogger.debug("Processed changes array:", changes);
 
             if (changes.length === 0) {
                 mainLogger.warn("No changes extracted from Gemini response, using default message");
