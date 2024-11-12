@@ -29,6 +29,9 @@ const weather: ICommand = {
     category: "Utility",
     aliases: ["forecast"],
     logger: Logger.getInstance("weather"),
+    flags: {
+        disabled: process.env.WEATHERAPI_KEY == "" ? true : false
+    },
     rateLimit: {
         usages: 5,
         duration: 60000, // 1 minute

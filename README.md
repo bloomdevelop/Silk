@@ -101,8 +101,10 @@ variables.
 Below are the available settings and their usage.
 
 
-| Option           | Description      | Usage                              |
-|------------------|------------------|------------------------------------|
-| TOKEN            | Bot's Token      | TOKEN=token                        |
-| PREFIX           | Bot's Prefix     | PREFIX=prefix                      |
-| DISABLED_PLUGINS | Disabled Plugins | DISABLED_PLUGINS=plugin,plugin,... |
+| Option           | Description                                      | Usage                              |
+|------------------|--------------------------------------------------|------------------------------------|
+| TOKEN            | Bot's Token                                      | TOKEN=token                        |
+| PREFIX           | Bot's Prefix                                     | PREFIX=prefix                      |
+| DISABLED_PLUGINS | Disabled Plugins                                 | DISABLED_PLUGINS=plugin,plugin,... |
+| GEMINI_API_KEY   | Gemini API Key (Required for generate changelog) | GEMINI_API_KEY=api_key             |
+| WEATHERAPI_KEY   | WeatherAPI Key (Required for weather command)    | WEATHERAPI_KEY=api_key             |

@@ -9,6 +9,9 @@ const changelog: ICommand = {
     usage: "changelog",
     category: "Info",
     aliases: ["updates", "version"],
+    flags: {
+        disabled: process.env.GEMINI_API_KEY == "" ? true : false
+    },
 
     async execute(msg: Message): Promise<void> {
         try {
