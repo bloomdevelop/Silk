@@ -12,6 +12,8 @@ export class CommandManager {
     private commands: Map<string, ICommand>;
     private aliases: Map<string, string>;
     private readonly client: Client;
+    private commandCache: Map<string, { command: ICommand; timestamp: number }>;
+    private readonly CACHE_TTL = 60000; // 1 minute cache TTL
 
     private constructor(client: Client) {
         if (!client) {
@@ -20,6 +22,7 @@ export class CommandManager {
         this.client = client;
         this.commands = new Map();
         this.aliases = new Map();
+        this.commandCache = new Map();
     }
 
     static getInstance(client?: Client): CommandManager {
@@ -74,16 +77,22 @@ export class CommandManager {
             const categoriesDir = join(__dirname, "..", "commands");
             const categories = readdirSync(categoriesDir);
 
-            for (const category of categories) {
+            // Load categories in parallel
+            const categoryPromises = categories.map(async (category) => {
                 const categoryStart = Date.now();
                 const categoryPath = join(categoriesDir, category);
                 const commandFiles = readdirSync(categoryPath).filter(file => file.endsWith(".js"));
 
                 stats[category] = { time: 0, commands: 0, failed: 0 };
 
-                for (const file of commandFiles) {
-                    const result = await this.loadCommand(join(categoryPath, file));
+                // Load commands in parallel within each category
+                const commandPromises = commandFiles.map(file => 
+                    this.loadCommand(join(categoryPath, file))
+                );
 
+                const results = await Promise.all(commandPromises);
+
+                for (const result of results) {
                     if (result) {
                         const { command, loadTime } = result;
                         this.commands.set(command.name, command);
@@ -103,7 +112,9 @@ export class CommandManager {
                 }
 
                 stats[category].time = Date.now() - categoryStart;
-            }
+            });
+
+            await Promise.all(categoryPromises);
 
             const totalTime = Date.now() - startTime;
             const totalCommands = Object.values(stats).reduce((acc, curr) => acc + curr.commands, 0);
@@ -132,7 +143,21 @@ export class CommandManager {
     }
 
     getCommand(name: string): ICommand | undefined {
-        return this.commands.get(name) || this.commands.get(this.aliases.get(name) || "");
+        // Check cache first
+        const cached = this.commandCache.get(name);
+        if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+            return cached.command;
+        }
+
+        // If not in cache or expired, look up command
+        const command = this.commands.get(name) || this.commands.get(this.aliases.get(name) || "");
+        
+        if (command) {
+            // Update cache
+            this.commandCache.set(name, { command, timestamp: Date.now() });
+        }
+        
+        return command;
     }
 
     getAllCommands(): Map<string, ICommand> {
@@ -142,6 +167,7 @@ export class CommandManager {
     getCommands(): ICommand[] {
         return Array.from(this.commands.values());
     }
+
     async executeCommand(message: Message, prefix: string): Promise<void> {
         if (!message.content) return;
         const args = message.content.slice(prefix.length).trim().split(/ +/);
@@ -151,6 +177,52 @@ export class CommandManager {
 
         const command = this.getCommand(commandName);
         if (!command) return;
+
+        // Check rate limits if configured
+        if (command.rateLimit) {
+            const { rateLimit } = command;
+            if (!rateLimit.users) {
+                rateLimit.users = new Map();
+            }
+
+            const now = Date.now();
+            const userId = message.author_id;
+            let userLimit = rateLimit.users.get(userId);
+
+            // Initialize user rate limit if not exists
+            if (!userLimit) {
+                userLimit = {
+                    usages: 0,
+                    resetTime: now + rateLimit.duration,
+                    lastUsed: now
+                };
+                rateLimit.users.set(userId, userLimit);
+            }
+
+            // Reset if time expired
+            if (now > userLimit.resetTime) {
+                userLimit.usages = 0;
+                userLimit.resetTime = now + rateLimit.duration;
+            }
+
+            // Check if rate limited
+            if (userLimit.usages >= rateLimit.usages) {
+                const timeLeft = (userLimit.resetTime - now) / 1000;
+                message.reply(`Rate limit exceeded. Please wait ${timeLeft.toFixed(1)} more second(s) before using the \`${command.name}\` command.`);
+                return;
+            }
+
+            // Update usage
+            userLimit.usages++;
+            userLimit.lastUsed = now;
+        }
+
+        // Pre-validate command arguments if validation function exists
+        if (command.validate && !command.validate(args)) {
+            message.reply(`Invalid command usage. Use \`${prefix}help ${command.name}\` for proper usage.`);
+            return;
+        }
+
         try {
             await command.execute(message, args, this.client);
         } catch (error) {

@@ -38,6 +38,7 @@ export interface ICommand {
         ownerOnly?: boolean;
         dangerous?: boolean;
     };
+    validate?: (args: string[]) => boolean;
     logger?: Logger;
     execute(
         message: Message,
