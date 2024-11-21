@@ -26,6 +26,7 @@ export class AutoModService {
         this.db = DatabaseService.getInstance();
         this.messageHistory = new Map();
         this.startCleanupInterval();
+        this.setupCleanupHandler();
     }
 
     public static getInstance(): AutoModService {
@@ -41,15 +42,58 @@ export class AutoModService {
         }, this.HISTORY_CLEANUP_INTERVAL);
     }
 
-    public destroy(): void {
-        if (this.cleanupInterval) {
-            clearInterval(this.cleanupInterval);
-            this.cleanupInterval = null;
+    private setupCleanupHandler(): void {
+        const cleanup = async () => {
+            try {
+                await this.destroy();
+                this.logger.debug('AutoModService cleaned up successfully');
+            } catch (error) {
+                this.logger.error('Error during AutoModService cleanup:', error);
+            }
+        };
+
+        process.on('SIGINT', cleanup);
+        process.on('SIGTERM', cleanup);
+        process.on('exit', cleanup);
+        process.on('uncaughtException', async (error) => {
+            this.logger.error('Uncaught exception in AutoModService:', error);
+            await cleanup();
+        });
+        process.on('unhandledRejection', async (reason) => {
+            this.logger.error('Unhandled rejection in AutoModService:', reason);
+            await cleanup();
+        });
+    }
+
+    public async destroy(): Promise<void> {
+        try {
+            // Clear all caches and rules
+            // this.rules.clear();
+            // this.ruleCache.clear();
+            // this.violationCache.clear();
+            
+            // Cancel any pending operations
+            if (this.cleanupInterval) {
+                clearInterval(this.cleanupInterval);
+                this.cleanupInterval = null;
+            }
+            
+            // Remove all listeners
+            process.removeAllListeners('SIGINT');
+            process.removeAllListeners('SIGTERM');
+            process.removeAllListeners('exit');
+            process.removeAllListeners('uncaughtException');
+            process.removeAllListeners('unhandledRejection');
+            
+            this.messageHistory.clear();
+            this.client = null;
+            AutoModService.instance = null;
+            this.logger.info('AutoMod service destroyed');
+            this.logger.debug('AutoModService resources cleaned up');
+        } catch (error) {
+            this.logger.error('Error during AutoModService cleanup:', error);
+            throw error;
         }
-        this.messageHistory.clear();
-        this.client = null;
-        AutoModService.instance = null;
-        this.logger.info('AutoMod service destroyed');
     }
 
     private cleanupMessageHistory(): void {

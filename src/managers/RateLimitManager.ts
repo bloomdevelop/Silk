@@ -8,14 +8,67 @@ export class RateLimitManager {
         duration: 10000, // 10 seconds
         users: new Map()
     };
+    private rateLimits: Map<string, RateLimitInfo> = new Map();
+    private cleanupInterval: NodeJS.Timeout | null = null;
+    private logger = commandLogger;
 
-    private constructor() {}
+    private constructor() {
+        this.setupCleanupHandler();
+    }
 
     static getInstance(): RateLimitManager {
         if (!RateLimitManager.instance) {
             RateLimitManager.instance = new RateLimitManager();
         }
         return RateLimitManager.instance;
+    }
+
+    private setupCleanupHandler(): void {
+        const cleanup = () => {
+            try {
+                this.destroy();
+                this.logger.debug('RateLimitManager cleaned up successfully');
+            } catch (error) {
+                this.logger.error('Error during RateLimitManager cleanup:', error);
+            }
+        };
+
+        process.on('SIGINT', cleanup);
+        process.on('SIGTERM', cleanup);
+        process.on('exit', cleanup);
+        process.on('uncaughtException', (error) => {
+            this.logger.error('Uncaught exception in RateLimitManager:', error);
+            cleanup();
+        });
+        process.on('unhandledRejection', (reason) => {
+            this.logger.error('Unhandled rejection in RateLimitManager:', reason);
+            cleanup();
+        });
+    }
+
+    public destroy(): void {
+        try {
+            // Clear all rate limit data
+            this.rateLimits.clear();
+            
+            // Clear cleanup interval
+            if (this.cleanupInterval) {
+                clearInterval(this.cleanupInterval);
+                this.cleanupInterval = null;
+            }
+            
+            // Remove all listeners
+            process.removeAllListeners('SIGINT');
+            process.removeAllListeners('SIGTERM');
+            process.removeAllListeners('exit');
+            process.removeAllListeners('uncaughtException');
+            process.removeAllListeners('unhandledRejection');
+            
+            this.logger.debug('RateLimitManager resources cleaned up');
+        } catch (error) {
+            this.logger.error('Error during RateLimitManager cleanup:', error);
+            throw error;
+        }
     }
 
     isRateLimited(userId: string, config: RateLimitConfig = this.defaultConfig): boolean {

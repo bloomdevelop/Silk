@@ -4,16 +4,25 @@ import { readdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { mainLogger } from "../utils/Logger.js";
-import { BoxFormatter } from "../utils/BoxFormatter.js";
 import { formatDuration, measureTime } from "../utils/TimeUtils.js";
+import { TaskQueue } from "../utils/TaskQueue.js";
+
+interface CommandLoadResult {
+    commands: number;
+    failed: number;
+    time: number;
+    category: string;
+}
 
 export class CommandManager {
     private static instance: CommandManager;
+    private client: Client;
     private commands: Map<string, ICommand>;
     private aliases: Map<string, string>;
-    private readonly client: Client;
     private commandCache: Map<string, { command: ICommand; timestamp: number }>;
-    private readonly CACHE_TTL = 60000; // 1 minute cache TTL
+    private logger = mainLogger;
+    private taskQueue: TaskQueue;
+    private readonly CACHE_TTL = 300000; // 5 minutes
 
     private constructor(client: Client) {
         if (!client) {
@@ -23,121 +32,110 @@ export class CommandManager {
         this.commands = new Map();
         this.aliases = new Map();
         this.commandCache = new Map();
+        this.taskQueue = new TaskQueue({
+            concurrency: 4, // Load up to 4 categories concurrently
+            defaultTimeout: 30000, // 30 second timeout per category
+            maxRetries: 2 // Retry failed loads twice
+        });
+
+        // Handle task completion events
+        this.taskQueue.on('taskCompleted', (result) => {
+            const loadResult = result.result as CommandLoadResult;
+            if (loadResult) {
+                this.logger.debug(
+                    `Category ${loadResult.category} loaded: ${loadResult.commands} commands in ${formatDuration(loadResult.time)}`
+                );
+            }
+        });
+
+        this.taskQueue.on('taskFailed', (result) => {
+            this.logger.error(
+                `Failed to load category after ${result.retries} retries:`,
+                result.error
+            );
+        });
+
+        this.setupCleanupHandler();
     }
 
-    static getInstance(client?: Client): CommandManager {
-        if (!CommandManager.instance && client) {
+    static getInstance(client: Client): CommandManager {
+        if (!CommandManager.instance) {
             CommandManager.instance = new CommandManager(client);
-        } else if (!CommandManager.instance) {
-            throw new Error('CommandManager must be initialized with a client first');
         }
         return CommandManager.instance;
     }
 
-    getClient(): Client {
-        return this.client;
-    }
-
-    private async loadCommand(filePath: string): Promise<{
-        command: ICommand;
-        loadTime: number;
-    } | null> {
-        const commandStart = measureTime();
-        try {
-            const { default: command } = await import(`file://${filePath}`);
-
-            if (!command.name || !command.execute) {
-                mainLogger.warn(`Invalid command file: ${filePath}`);
-                return null;
-            }
-
-            // Bind the client to the command if it needs it
-            if (typeof command.init === 'function') {
-                await command.init(this.client);
-            }
-
-            const loadTime = commandStart();
-            return { command, loadTime };
-        } catch (error) {
-            mainLogger.error(`Error loading command from ${filePath}:`, error);
-            return null;
-        }
-    }
-
     async loadCommands(): Promise<void> {
         const startTime = Date.now();
-        const stats: Record<string, {
-            time: number;
-            commands: number;
-            failed: number;
-        }> = {};
 
         try {
             const __dirname = dirname(fileURLToPath(import.meta.url));
             const categoriesDir = join(__dirname, "..", "commands");
             const categories = readdirSync(categoriesDir);
 
-            // Load categories in parallel
-            const categoryPromises = categories.map(async (category) => {
-                const categoryStart = Date.now();
+            // Create tasks for each category
+            const loadPromises = categories.map(category => {
                 const categoryPath = join(categoriesDir, category);
-                const commandFiles = readdirSync(categoryPath).filter(file => file.endsWith(".js"));
+                // Convert src path to dist path for compiled files
+                const distPath = categoryPath.replace('/src/', '/dist/');
+                
+                return this.taskQueue.addTask({
+                    execute: async () => {
+                        const categoryStart = Date.now();
+                        // Only look for .js files in dist directory
+                        const commandFiles = readdirSync(distPath).filter(file => file.endsWith(".js"));
+                        let loadedCount = 0;
+                        let failedCount = 0;
 
-                stats[category] = { time: 0, commands: 0, failed: 0 };
+                        for (const file of commandFiles) {
+                            try {
+                                const filePath = join(distPath, file);
+                                this.logger.debug(`Loading command from: ${filePath}`);
+                                
+                                const commandModule = await import(filePath);
+                                const command: ICommand = commandModule.default;
 
-                // Load commands in parallel within each category
-                const commandPromises = commandFiles.map(file => 
-                    this.loadCommand(join(categoryPath, file))
-                );
+                                if (!command.name) {
+                                    throw new Error(`Command in ${file} has no name property`);
+                                }
 
-                const results = await Promise.all(commandPromises);
-
-                for (const result of results) {
-                    if (result) {
-                        const { command, loadTime } = result;
-                        this.commands.set(command.name, command);
-
-                        if (command.aliases) {
-                            command.aliases.forEach(alias => {
-                                this.aliases.set(alias, command.name);
-                            });
+                                this.commands.set(command.name, command);
+                                if (command.aliases) {
+                                    command.aliases.forEach(alias => {
+                                        this.aliases.set(alias, command.name);
+                                    });
+                                }
+                                this.logger.debug(`Successfully loaded command: ${command.name}`);
+                                loadedCount++;
+                            } catch (error) {
+                                this.logger.error(`Failed to load command from ${file}:`, error);
+                                failedCount++;
+                            }
                         }
 
-                        stats[category].time += loadTime;
-                        stats[category].commands++;
-                        mainLogger.debug(`Loaded command: ${command.name} (${formatDuration(loadTime)})`);
-                    } else {
-                        stats[category].failed++;
-                    }
-                }
-
-                stats[category].time = Date.now() - categoryStart;
+                        return {
+                            commands: loadedCount,
+                            failed: failedCount,
+                            time: Date.now() - categoryStart,
+                            category
+                        } as CommandLoadResult;
+                    },
+                    timeout: 60000, // 1 minute timeout per category
+                    retries: 2
+                });
             });
 
-            await Promise.all(categoryPromises);
-
+            // Wait for all tasks to complete
+            await Promise.all(loadPromises);
+            
+            // Clean up task results
+            this.taskQueue.clearAllTaskResults();
+            
             const totalTime = Date.now() - startTime;
-            const totalCommands = Object.values(stats).reduce((acc, curr) => acc + curr.commands, 0);
-            const totalFailed = Object.values(stats).reduce((acc, curr) => acc + curr.failed, 0);
-
-            // Format the loading summary
-            const summaryData = {
-                "Commands Loaded": `${totalCommands}`,
-                "Failed Commands": totalFailed > 0 ? `${totalFailed}` : "None",
-                ...Object.entries(stats).map(([category, data]) => ({
-                    [`${category} Category`]: `${data.commands} cmds in ${formatDuration(data.time)}`
-                })).reduce((acc, curr) => ({ ...acc, ...curr }), {}),
-                "Total Time": formatDuration(totalTime)
-            };
-
-            console.log(BoxFormatter.format(
-                "Command Loading Summary",
-                summaryData,
-                40
-            ));
+            this.logger.info(`Commands loaded in ${formatDuration(totalTime)}`);
 
         } catch (error) {
-            mainLogger.error("Error loading commands:", error);
+            this.logger.error("Error loading commands:", error);
             throw error;
         }
     }
@@ -226,7 +224,7 @@ export class CommandManager {
         try {
             await command.execute(message, args, this.client);
         } catch (error) {
-            mainLogger.error("Error executing command:", error);
+            this.logger.error("Error executing command:", error);
             throw error;
         }
     }
@@ -260,8 +258,81 @@ export class CommandManager {
 
             return true;
         } catch (error) {
-            mainLogger.error(`Error reloading command ${name}:`, error);
+            this.logger.error(`Error reloading command ${name}:`, error);
             return false;
+        }
+    }
+
+    private async loadCommand(filePath: string): Promise<{
+        command: ICommand;
+        loadTime: number;
+    } | null> {
+        const commandStart = measureTime();
+        try {
+            const { default: command } = await import(`file://${filePath}`);
+
+            if (!command.name || !command.execute) {
+                this.logger.warn(`Invalid command file: ${filePath}`);
+                return null;
+            }
+
+            // Bind the client to the command if it needs it
+            if (typeof command.init === 'function') {
+                await command.init(this.client);
+            }
+
+            const loadTime = commandStart();
+            return { command, loadTime };
+        } catch (error) {
+            this.logger.error(`Error loading command from ${filePath}:`, error);
+            return null;
+        }
+    }
+
+    private setupCleanupHandler(): void {
+        const cleanup = async () => {
+            try {
+                await this.destroy();
+                this.logger.debug('CommandManager cleaned up successfully');
+            } catch (error) {
+                this.logger.error('Error during CommandManager cleanup:', error);
+            }
+        };
+
+        process.on('SIGINT', cleanup);
+        process.on('SIGTERM', cleanup);
+        process.on('exit', cleanup);
+        process.on('uncaughtException', (error) => {
+            this.logger.error('Uncaught exception in CommandManager:', error);
+            cleanup();
+        });
+        process.on('unhandledRejection', (reason) => {
+            this.logger.error('Unhandled rejection in CommandManager:', reason);
+            cleanup();
+        });
+    }
+
+    public async destroy(): Promise<void> {
+        try {
+            // Clear all command caches
+            this.commands.clear();
+            this.aliases.clear();
+            this.commandCache.clear();
+            
+            // Clean up task queue
+            await this.taskQueue.destroy();
+            
+            // Remove all listeners
+            process.removeAllListeners('SIGINT');
+            process.removeAllListeners('SIGTERM');
+            process.removeAllListeners('exit');
+            process.removeAllListeners('uncaughtException');
+            process.removeAllListeners('unhandledRejection');
+            
+            this.logger.debug('CommandManager resources cleaned up');
+        } catch (error) {
+            this.logger.error('Error during CommandManager cleanup:', error);
+            throw error;
         }
     }
 }
