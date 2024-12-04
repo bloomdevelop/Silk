@@ -1,3 +1,6 @@
+> [!WARNING]
+> This repository has been **deprecated**, as I have moved it to git.gay. To contribute, please visit [repository from git.gay](https://git.gay/bloomdevelop/Silk).
+
 # Silk
 
 > Derived from stationbot which is no longer exist
