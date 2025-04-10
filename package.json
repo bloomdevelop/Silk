@@ -1,45 +1,45 @@
 {
-    "name": "slik",
-    "version": "2.4.0",
-    "description": "Multi-purpose revolt bot",
-    "main": "dist/index.js",
-    "type": "module",
-    "repository": {
-        "type": "github",
-        "url": "https://github.com/bloomdevelop/Slik"
-    },
-    "scripts": {
-        "build": "rimraf dist && tsc && cp .env dist/.env",
-        "start": "nodemon .",
-        "dev": "rimraf dist && tsc && node ."
-    },
-    "keywords": [
-        "revolt.chat",
-        "revolt.js",
-        "revoltjs",
-        "typescript",
-        "template"
-    ],
-    "author": "Bloom Perez",
-    "license": "GPLv3",
-    "dependencies": {
-        "@google/generative-ai": "^0.21.0",
-        "@libsql/client": "^0.14.0",
-        "@types/node-fetch": "^2.6.12",
-        "canvas": "^2.11.2",
-        "chalk": "^5.3.0",
-        "dotenv": "^16.4.5",
-        "node-fetch": "^3.3.2",
-        "revolt.js": "6.0.20-patch.2",
-        "sharp": "^0.33.5",
-        "ulid": "^2.3.0",
-        "zod": "^3.23.8"
-    },
-    "devDependencies": {
-        "@types/node": "^22.2.0",
-        "nodemon": "^3.1.7",
-        "prettier": "^3.3.3",
-        "rimraf": "^6.0.1",
-        "typescript": "^5.5.4"
-    }
+  "name": "slik",
+  "version": "2.4.0",
+  "description": "Multi-purpose revolt bot",
+  "main": "dist/index.js",
+  "type": "module",
+  "repository": {
+    "type": "github",
+    "url": "https://github.com/bloomdevelop/Slik"
+  },
+  "scripts": {
+    "build": "rimraf dist && tsc && cp .env dist/.env",
+    "start": "nodemon .",
+    "dev": "rimraf dist && tsc && node ."
+  },
+  "keywords": [
+    "revolt.chat",
+    "revolt.js",
+    "revoltjs",
+    "typescript",
+    "template"
+  ],
+  "author": "Bloom Perez",
+  "license": "GPLv3",
+  "dependencies": {
+    "@google/generative-ai": "^0.21.0",
+    "@libsql/client": "^0.14.0",
+    "@types/node-fetch": "^2.6.12",
+    "canvas": "^2.11.2",
+    "chalk": "^5.3.0",
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2",
+    "revolt.js": "6.0.20-patch.2",
+    "sharp": "^0.33.5",
+    "ulid": "^2.3.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@types/node": "^22.2.0",
+    "nodemon": "^3.1.7",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.5.4"
+  }
 }
