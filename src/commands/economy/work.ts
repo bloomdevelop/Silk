@@ -83,7 +83,7 @@ const work: ICommand = {
             return msg.reply({
                 embeds: [
                     {
-                        title: 'Work Complete!',
+                        title: 'Error',
                         description: `An error occurred while working. Please try again later.\n \`\`\`${error}\`\`\``,
                         colour: '#ff0000',
                     },
