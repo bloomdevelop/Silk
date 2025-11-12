@@ -1,5 +1,5 @@
-import { ICommand, Category } from "../../types.js";
-import { Message } from "revolt.js";
+import type { ICommand, Category } from "../../types.js";
+import type { Message } from "stoat.js";
 import { Bot } from "../../Bot.js";
 import { Logger } from "../../utils/Logger.js";
 

@@ -1,6 +1,6 @@
 import { ICommand } from "../../types.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
-import { Message } from "revolt.js";
+import { Message } from "stoat.js";
 import { mainLogger } from "../../utils/Logger.js";
 import { RateLimitHandler } from "../../utils/RateLimitHandler.js";
 

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { config } from 'dotenv'
-import path from 'path'
+import path from 'node:path'
 
 const ConfigSchema = z.object({
   TOKEN: z.string(),

@@ -1,5 +1,5 @@
 import { ICommand } from "../../types.js";
-import { Message } from "revolt.js";
+import { Message } from "stoat.js";
 import { mainLogger } from "../../utils/Logger.js";
 
 const echo: ICommand = {

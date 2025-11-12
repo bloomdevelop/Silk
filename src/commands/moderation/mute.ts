@@ -1,6 +1,6 @@
 import { ICommand } from "../../types.js";
 import { Logger } from "../../utils/Logger.js";
-import { Message } from "revolt.js";
+import { Message } from "stoat.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
 
 const mute: ICommand = {

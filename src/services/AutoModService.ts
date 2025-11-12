@@ -1,7 +1,7 @@
-import { Client, Message } from "revolt.js";
+import type { Client, Message } from "stoat.js";
 import { Logger } from "../utils/Logger.js";
 import { DatabaseService } from "./DatabaseService.js";
-import { AutoModConfig, AutoModViolation } from "../types.js";
+import type { AutoModConfig, AutoModViolation } from "../types.js";
 import { RateLimitHandler } from "../utils/RateLimitHandler.js";
 
 // Define MessageHistory interface
@@ -143,15 +143,16 @@ export class AutoModService {
 
     private async isExempt(message: Message, config: AutoModConfig): Promise<boolean> {
         // Check user whitelist
-        if (config.whitelist.users.includes(message.author_id)) return true;
+        if (!message.author) return false;
+        if (config.whitelist.users.includes(message.author.id)) return true;
 
         // Check channel whitelist
-        if (config.whitelist.channels.includes(message.channel_id)) return true;
+        if (config.whitelist.channels.includes(message.channelId)) return true;
 
         // Check role whitelist (if in a server)
         if (message.channel?.server) {
-            const member = await message.channel.server.fetchMember(message.author_id);
-            if (member && member.roles?.some(role => config.whitelist.roles.includes(role))) {
+            const member = await message.channel.server.fetchMember(message.author.id);
+            if (member?.roles?.some(role => config.whitelist.roles.includes(role))) {
                 return true;
             }
         }
@@ -160,7 +161,9 @@ export class AutoModService {
     }
 
     private checkSpam(message: Message, config: AutoModConfig): boolean {
-        const userId = message.author_id;
+        if (!message.author) return false;
+        
+        const userId = message.author.id;
         const now = Date.now();
 
         if (!this.messageHistory.has(userId)) {
@@ -172,7 +175,9 @@ export class AutoModService {
             return false;
         }
 
-        const history = this.messageHistory.get(userId)!;
+        const history = this.messageHistory.get(userId);
+
+        if (!history) return false;
         
         // Keep only messages within the time window
         history.timestamps = history.timestamps.filter(
@@ -197,7 +202,7 @@ export class AutoModService {
             
             // Log the specific type of spam detected
             this.logger.warn(
-                `Spam detected from user ${message.author?.username} (${message.author_id}):`,
+                `Spam detected from user ${message.author?.username} (${message.author.id}):`,
                 {
                     burstViolation,
                     rapidRepeatViolation,
@@ -246,7 +251,7 @@ export class AutoModService {
     private checkInvites(message: Message): boolean {
         if (!message.content) return false;
 
-        const inviteRegex = /(discord\.gg|discord\.com\/invite|revolt\.chat\/invite)/i;
+        const inviteRegex = /(revolt\.chat\/invite|stoat\.gg\/invite)/i;
         return inviteRegex.test(message.content);
     }
 
@@ -255,8 +260,10 @@ export class AutoModService {
         violation: AutoModViolation,
         config: AutoModConfig
     ): Promise<void> {
+        if (!message.channel || !message.author) return;
+
         this.logger.warn(
-            `AutoMod violation: ${violation.type} by ${message.author?.username} in ${message.channel_id}`,
+            `AutoMod violation: ${violation.type} by ${message.author?.username} in ${message.channel.id}`,
             violation.details
         );
 
@@ -269,7 +276,7 @@ export class AutoModService {
             await this.db.recordAutoModViolation(violation);
 
             // Update user's violation count
-            const history = this.messageHistory.get(message.author_id);
+            const history = this.messageHistory.get(message.author.id);
             if (history) {
                 history.violations++;
 
@@ -292,7 +299,7 @@ export class AutoModService {
             if (!message.author || message.author.bot) return;
 
             await RateLimitHandler.executeWithRetry(async () => {
-                const config = await this.db.getAutoModConfig(message.channel?.server?._id);
+                const config = await this.db.getAutoModConfig(message.channel?.server?.id);
                 if (!config.enabled) return;
 
                 // Check exemptions first
@@ -302,12 +309,14 @@ export class AutoModService {
 
                 // Check for spam first since it's most common
                 if (config.filters.spam && this.checkSpam(message, config)) {
-                    const history = this.messageHistory.get(message.author_id);
+                    if (!message.author || !message.channel) return;
+
+                    const history = this.messageHistory.get(message.author.id);
                     violations.push({
                         type: 'spam',
-                        userId: message.author_id,
-                        channelId: message.channel_id,
-                        messageId: message._id,
+                        userId: message.author.id,
+                        channelId: message.channel.id,
+                        messageId: message.id,
                         timestamp: Date.now(),
                         details: `Message rate exceeded threshold. Violations: ${history?.violations}`
                     });
@@ -321,44 +330,52 @@ export class AutoModService {
                 }
 
                 if (config.filters.mentions && this.checkMentions(message, config)) {
+                    if (!message.author || !message.channel) return;
+
                     violations.push({
                         type: 'mentions',
-                        userId: message.author_id,
-                        channelId: message.channel_id,
-                        messageId: message._id,
+                        userId: message.author.id,
+                        channelId: message.channel.id,
+                        messageId: message.id,
                         timestamp: Date.now(),
                         details: `Excessive mentions: ${message.content?.match(/@/g)?.length}`
                     });
                 }
 
                 if (config.filters.caps && this.checkCaps(message, config)) {
+                    if (!message.author || !message.channel) return;
+
                     violations.push({
                         type: 'caps',
-                        userId: message.author_id,
-                        channelId: message.channel_id,
-                        messageId: message._id,
+                        userId: message.author.id,
+                        channelId: message.channel.id,
+                        messageId: message.id,
                         timestamp: Date.now(),
                         details: 'Excessive capital letters'
                     });
                 }
 
                 if (config.filters.links && this.checkLinks(message, config)) {
+                    if (!message.author || !message.channel) return;
+
                     violations.push({
                         type: 'links',
-                        userId: message.author_id,
-                        channelId: message.channel_id,
-                        messageId: message._id,
+                        userId: message.author.id,
+                        channelId: message.channel.id,
+                        messageId: message.id,
                         timestamp: Date.now(),
                         details: 'Unauthorized link detected'
                     });
                 }
 
                 if (config.filters.invites && this.checkInvites(message)) {
+                    if (!message.author || !message.channel) return;
+
                     violations.push({
                         type: 'invites',
-                        userId: message.author_id,
-                        channelId: message.channel_id,
-                        messageId: message._id,
+                        userId: message.author.id,
+                        channelId: message.channel.id,
+                        messageId: message.id,
                         timestamp: Date.now(),
                         details: 'Server invite link detected'
                     });
@@ -373,9 +390,11 @@ export class AutoModService {
                     // Send warning message if enabled
                     if (config.actions.warn) {
                         try {
+                            if (!message.author || !message.channel) return;
+
                             await message.channel?.sendMessage({
                                 content: [
-                                    `<@${message.author_id}>, please follow the server rules.`,
+                                    `<@${message.author.id}>, please follow the server rules.`,
                                     `Violation: ${violation.type}`,
                                     violation.type === 'spam' ? 
                                         "Continuing to spam may result in a timeout." : ""
@@ -403,7 +422,7 @@ export class AutoModService {
             }
 
             await RateLimitHandler.executeWithRetry(async () => {
-                const botMember = await server.fetchMember(this.client?.user?._id || '');
+                const botMember = await server.fetchMember(this.client?.user?.id || '');
                 if (!botMember) {
                     this.logger.warn('Could not fetch bot member');
                     return;
@@ -416,21 +435,25 @@ export class AutoModService {
                     return;
                 }
 
-                const member = await server.fetchMember(message.author_id);
+                if (!message.author) return;
+
+                const member = await server.fetchMember(message.author.id);
                 if (!member) return;
 
                 // Calculate timeout end time
                 const timeoutUntil = new Date(Date.now() + duration * 60 * 1000);
 
                 // Set the timeout property with retry handling
-                member.timeout = timeoutUntil;
+                member.timeout?.setDate(timeoutUntil.getTime());
                 this.logger.info(`Applied ${duration} minute timeout to ${member.user?.username}`);
 
                 // Notify user using client's channel
                 try {
                     await RateLimitHandler.executeWithRetry(async () => {
+                        if (!message.author) return;
+
                         const response = await channel.sendMessage({
-                            content: `<@${message.author_id}> has been timed out for ${duration} minutes due to multiple violations.`
+                            content: `<@${message.author.id}> has been timed out for ${duration} minutes due to multiple violations.`
                         });
                         if (!response) {
                             throw new Error('Failed to send message');

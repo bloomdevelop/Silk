@@ -1,10 +1,9 @@
-import { Client } from "revolt.js";
-import type { Message } from "revolt.js";
-import { CommandManager } from "./CommandManager.js";
-import { DatabaseService } from "../services/DatabaseService.js";
-import { Logger } from "../utils/Logger.js";
-import { ProcessManager } from "./ProcessManager.js";
-import { Bot } from "../Bot.js";
+import type { Client, Message } from 'stoat.js';
+import type { CommandManager } from './CommandManager.js';
+import { DatabaseService } from '../services/DatabaseService.js';
+import { Logger } from '../utils/Logger.js';
+import { ProcessManager } from './ProcessManager.js';
+import type { Bot } from '../Bot.js';
 
 export class EventManager {
     private client: Client;
@@ -12,36 +11,52 @@ export class EventManager {
     private db: DatabaseService;
     private logger: Logger;
     private bot: Bot;
-    private prefixCache: Map<string, { prefix: string, timestamp: number }>;
+    private prefixCache: Map<
+        string,
+        { prefix: string; timestamp: number }
+    >;
     private readonly CACHE_TTL = 300000; // 5 minutes
     private cleanupInterval: NodeJS.Timeout | null = null;
-    private isRegistered: boolean = false;
-    private messageHandlerBound: ((message: Message) => Promise<void>) | null = null;
+    private isRegistered = false;
+    private messageHandlerBound:
+        | ((message: Message) => Promise<void>)
+        | null = null;
     private readyHandlerBound: (() => void) | null = null;
     private handledMessages = new Set<string>();
     private processingMessages = new Set<string>();
     private readonly MESSAGE_TTL = 5000; // 5 seconds
 
-    constructor(client: Client, commandManager: CommandManager, bot: Bot) {
+    constructor(
+        client: Client,
+        commandManager: CommandManager,
+        bot: Bot,
+    ) {
         this.client = client;
         this.commandManager = commandManager;
         this.db = DatabaseService.getInstance();
-        this.logger = Logger.getInstance("EventManager");
+        this.logger = Logger.getInstance('EventManager');
         this.bot = bot;
         this.prefixCache = new Map();
 
         // Set up cleanup interval
-        this.cleanupInterval = setInterval(() => this.cleanupCache(), this.CACHE_TTL);
+        this.cleanupInterval = setInterval(
+            () => this.cleanupCache(),
+            this.CACHE_TTL,
+        );
 
         // Register cleanup with ProcessManager
-        ProcessManager.getInstance().registerCleanupFunction(() => this.destroy());
+        ProcessManager.getInstance().registerCleanupFunction(() =>
+            this.destroy(),
+        );
     }
 
     async registerEvents(): Promise<void> {
         try {
             // Check if events are already registered
             if (this.isRegistered) {
-                this.logger.warn('Events are already registered, skipping registration');
+                this.logger.warn(
+                    'Events are already registered, skipping registration',
+                );
                 return;
             }
 
@@ -55,8 +70,8 @@ export class EventManager {
             this.readyHandlerBound = this.readyHandler.bind(this);
 
             // Register event handlers
-            this.client.on("message", this.messageHandlerBound);
-            this.client.on("ready", this.readyHandlerBound);
+            this.client.on('message', this.messageHandlerBound);
+            this.client.on('ready', this.readyHandlerBound);
 
             this.isRegistered = true;
             this.logger.info('Events registered successfully');
@@ -74,17 +89,21 @@ export class EventManager {
 
             // Continue with regular command processing
             // Create a unique message identifier
-            const messageId = message._id;
+            const messageId = message.id;
 
             // Check if we've already handled this message
             if (this.handledMessages.has(messageId)) {
-                this.logger.debug(`Skipping duplicate message: ${messageId}`);
+                this.logger.debug(
+                    `Skipping duplicate message: ${messageId}`,
+                );
                 return;
             }
 
             // Check if this specific message is being processed
             if (this.processingMessages.has(messageId)) {
-                this.logger.debug(`Message ${messageId} is already being processed`);
+                this.logger.debug(
+                    `Message ${messageId} is already being processed`,
+                );
                 return;
             }
 
@@ -98,12 +117,17 @@ export class EventManager {
             }, this.MESSAGE_TTL);
 
             // Ignore bots and self
-            if (message.author?.bot || message.author?._id === this.client.user?._id) {
-                this.logger.debug(`Ignoring message from bot: ${message.author?.username}`);
+            if (
+                message.author?.bot ||
+                message.author?.id === this.client.user?.id
+            ) {
+                this.logger.debug(
+                    `Ignoring message from bot: ${message.author?.username}`,
+                );
                 return;
             }
 
-            const serverId = message.channel?.server?._id;
+            const serverId = message.channel?.server?.id;
             let prefix: string;
 
             // Generate a unique cache key
@@ -113,40 +137,51 @@ export class EventManager {
             const cached = this.prefixCache.get(cacheKey);
             const now = Date.now();
 
-            if (cached && (now - cached.timestamp) < this.CACHE_TTL) {
+            if (cached && now - cached.timestamp < this.CACHE_TTL) {
                 prefix = cached.prefix;
-                this.logger.debug(`Using cached prefix for ${cacheKey}`);
+                this.logger.debug(
+                    `Using cached prefix for ${cacheKey}`,
+                );
             } else {
                 this.logger.debug(`Fetching prefix for ${cacheKey}`);
-                const serverConfig = await this.db.getServerConfig(serverId || '');
+                const serverConfig = await this.db.getServerConfig(
+                    serverId || '',
+                );
                 prefix = serverConfig.bot.prefix;
 
                 this.prefixCache.set(cacheKey, {
                     prefix,
-                    timestamp: now
+                    timestamp: now,
                 });
-                this.logger.debug(`Updated prefix cache for ${cacheKey}: ${prefix}`);
+                this.logger.debug(
+                    `Updated prefix cache for ${cacheKey}: ${prefix}`,
+                );
             }
 
             // Check if message starts with prefix
             if (!message.content?.startsWith(prefix)) {
-                this.logger.debug('Message does not start with prefix, ignoring');
+                this.logger.debug(
+                    'Message does not start with prefix, ignoring',
+                );
                 return;
             }
 
-            this.logger.debug(`Processing command from message: ${message.content}`);
+            this.logger.debug(
+                `Processing command from message: ${message.content}`,
+            );
             await this.commandManager.executeCommand(message, prefix);
-
         } catch (error) {
-            this.logger.error("Error handling message:", error);
+            this.logger.error('Error handling message:', error);
         } finally {
             // Remove the processing lock for this specific message
-            this.processingMessages.delete(message._id);
+            this.processingMessages.delete(message.id);
         }
     }
 
     private readyHandler(): void {
-        this.logger.info(`Bot logged in as ${this.client.user?.username}`);
+        this.logger.info(
+            `Bot logged in as ${this.client.user?.username}`,
+        );
         this.logger.debug('Ready event handler executed');
     }
 
@@ -154,11 +189,17 @@ export class EventManager {
         this.logger.debug('Removing existing event listeners...');
 
         if (this.messageHandlerBound) {
-            this.client.removeListener("message", this.messageHandlerBound);
+            this.client.removeListener(
+                'message',
+                this.messageHandlerBound,
+            );
         }
 
         if (this.readyHandlerBound) {
-            this.client.removeListener("ready", this.readyHandlerBound);
+            this.client.removeListener(
+                'ready',
+                this.readyHandlerBound,
+            );
         }
 
         this.messageHandlerBound = null;
@@ -180,7 +221,9 @@ export class EventManager {
         }
 
         if (cleanedEntries > 0) {
-            this.logger.debug(`Cleaned up ${cleanedEntries} expired prefix cache entries`);
+            this.logger.debug(
+                `Cleaned up ${cleanedEntries} expired prefix cache entries`,
+            );
         } else {
             this.logger.debug('No expired cache entries to clean up');
         }

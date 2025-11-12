@@ -1,8 +1,17 @@
-import { createClient, Client, Transaction } from "@libsql/client";
-import { Logger, mainLogger } from "../utils/Logger.js";
-import { AutoModConfig, IConfiguration, UserEconomy, AutoModViolation } from "../types.js";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import {
+    createClient,
+    type Client,
+    type Transaction,
+} from '@libsql/client';
+import { Logger, mainLogger } from '../utils/Logger.js';
+import type {
+    AutoModConfig,
+    IConfiguration,
+    UserEconomy,
+    AutoModViolation,
+} from '../types.js';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 interface PreparedStatements {
     getUserEconomy: string;
@@ -15,12 +24,15 @@ interface PreparedStatements {
 export class DatabaseService {
     private static instance: DatabaseService | undefined;
     private client!: Client;
-    private isInitialized: boolean = false;
-    private configCache: Map<string, {
-        data: IConfiguration;
-        timestamp: number;
-        dirty: boolean;  // Track if cache needs to be saved
-    }>;
+    private isInitialized = false;
+    private configCache: Map<
+        string,
+        {
+            data: IConfiguration;
+            timestamp: number;
+            dirty: boolean; // Track if cache needs to be saved
+        }
+    >;
     private preparedStatements!: PreparedStatements;
     private batchOperations: Map<string, (() => Promise<void>)[]>;
     private batchTimeout?: NodeJS.Timeout;
@@ -33,7 +45,7 @@ export class DatabaseService {
     private constructor() {
         this.configCache = new Map();
         this.batchOperations = new Map();
-        this.logger = Logger.getInstance("Database");
+        this.logger = Logger.getInstance('Database');
         this.setupCleanupHandler();
     }
 
@@ -46,7 +58,7 @@ export class DatabaseService {
 
     private async prepareStatements(): Promise<void> {
         this.preparedStatements = {
-            getUserEconomy: "SELECT * FROM economy WHERE user_id = ?",
+            getUserEconomy: 'SELECT * FROM economy WHERE user_id = ?',
             updateUserEconomy: `
                 INSERT INTO economy (user_id, balance, bank, last_daily, last_work, work_streak, inventory, total)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -59,7 +71,8 @@ export class DatabaseService {
                 inventory = excluded.inventory,
                 total = excluded.total
             `,
-            getServerConfig: "SELECT * FROM configurations WHERE server_id = ?",
+            getServerConfig:
+                'SELECT * FROM configurations WHERE server_id = ?',
             updateServerConfig: `
                 INSERT INTO configurations (
                     server_id, prefix, welcome_channel, log_channel,
@@ -98,13 +111,18 @@ export class DatabaseService {
                 INSERT INTO automod_violations (
                     type, user_id, channel_id, message_id, timestamp, details
                 ) VALUES (?, ?, ?, ?, ?, ?)
-            `
+            `,
         };
     }
 
-    private async processBatch(key?: string, operations?: (() => Promise<void>)[]): Promise<void> {
+    private async processBatch(
+        key?: string,
+        operations?: (() => Promise<void>)[],
+    ): Promise<void> {
         if (!this.isInitialized) {
-            this.logger.debug('Database not initialized, skipping batch processing');
+            this.logger.debug(
+                'Database not initialized, skipping batch processing',
+            );
             return;
         }
 
@@ -130,23 +148,34 @@ export class DatabaseService {
                 }
                 await this.commitTransaction(transaction);
                 this.batchOperations.delete(key);
-                this.logger.debug(`Processed batch of ${operations.length} operations for ${key}`);
+                this.logger.debug(
+                    `Processed batch of ${operations.length} operations for ${key}`,
+                );
             } catch (error) {
                 await this.rollbackTransaction(transaction);
                 throw error;
             }
         } catch (error) {
-            this.logger.error(`Error processing batch for ${key}:`, error);
+            this.logger.error(
+                `Error processing batch for ${key}:`,
+                error,
+            );
             // Clear the failed batch to prevent retry
             this.batchOperations.delete(key);
         }
     }
 
-    private scheduleBatch(key: string, operation: () => Promise<void>): void {
+    private scheduleBatch(
+        key: string,
+        operation: () => Promise<void>,
+    ): void {
         if (!this.batchOperations.has(key)) {
             this.batchOperations.set(key, []);
         }
-        this.batchOperations.get(key)!.push(operation);
+        const operations = this.batchOperations.get(key);
+        if (operations) {
+            operations.push(operation);
+        }
 
         // Clear existing timeout
         if (this.batchTimeout) {
@@ -154,7 +183,10 @@ export class DatabaseService {
         }
 
         // Schedule new batch processing
-        this.batchTimeout = setTimeout(() => this.processBatch(), this.BATCH_DELAY);
+        this.batchTimeout = setTimeout(
+            () => this.processBatch(),
+            this.BATCH_DELAY,
+        );
     }
 
     private async cleanup(): Promise<void> {
@@ -167,10 +199,18 @@ export class DatabaseService {
 
             // Cleanup config cache and flush dirty entries
             const dirtyConfigs: Promise<void>[] = [];
-            for (const [serverId, cache] of this.configCache.entries()) {
+            for (const [
+                serverId,
+                cache,
+            ] of this.configCache.entries()) {
                 if (now - cache.timestamp > this.CACHE_TTL) {
                     if (cache.dirty) {
-                        dirtyConfigs.push(this.updateServerConfig(serverId, cache.data));
+                        dirtyConfigs.push(
+                            this.updateServerConfig(
+                                serverId,
+                                cache.data,
+                            ),
+                        );
                     }
                     this.configCache.delete(serverId);
                 }
@@ -179,12 +219,17 @@ export class DatabaseService {
             // Wait for all dirty configs to be saved
             if (dirtyConfigs.length > 0) {
                 await Promise.all(dirtyConfigs);
-                this.logger.debug(`Flushed ${dirtyConfigs.length} dirty configurations`);
+                this.logger.debug(
+                    `Flushed ${dirtyConfigs.length} dirty configurations`,
+                );
             }
 
             this.logger.debug('Database cleanup completed');
         } catch (error) {
-            this.logger.error('Error during database cleanup:', error);
+            this.logger.error(
+                'Error during database cleanup:',
+                error,
+            );
         }
     }
 
@@ -200,31 +245,46 @@ export class DatabaseService {
         try {
             if (!dbUrl) {
                 // Use local SQLite database if Turso URL is not provided
-                const __dirname = dirname(fileURLToPath(import.meta.url));
-                const dbPath = join(__dirname, '..', '..', 'data', 'silk.db');
+                const __dirname = dirname(
+                    fileURLToPath(import.meta.url),
+                );
+                const dbPath = join(
+                    __dirname,
+                    '..',
+                    '..',
+                    'data',
+                    'silk.db',
+                );
 
                 // Create data directory if it doesn't exist
                 const dataDir = join(__dirname, '..', '..', 'data');
                 try {
-                    await import('fs/promises').then(fs =>
-                        fs.mkdir(dataDir, { recursive: true })
+                    await import('node:fs/promises').then((fs) =>
+                        fs.mkdir(dataDir, { recursive: true }),
                     );
-                    mainLogger.info(`Created data directory at: ${dataDir}`);
+                    mainLogger.info(
+                        `Created data directory at: ${dataDir}`,
+                    );
                 } catch (mkdirError) {
-                    mainLogger.error('Failed to create data directory:', mkdirError);
+                    mainLogger.error(
+                        'Failed to create data directory:',
+                        mkdirError,
+                    );
                     throw mkdirError;
                 }
 
-                mainLogger.info(`Using local SQLite database at: ${dbPath}`);
+                mainLogger.info(
+                    `Using local SQLite database at: ${dbPath}`,
+                );
                 this.client = createClient({
-                    url: `file:${dbPath}`
+                    url: `file:${dbPath}`,
                 });
             } else {
                 // Use Turso database if URL is provided
                 mainLogger.info('Using Turso database');
                 this.client = createClient({
                     url: dbUrl,
-                    authToken
+                    authToken,
                 });
             }
 
@@ -240,11 +300,15 @@ export class DatabaseService {
             this.setupCleanupInterval();
             await this.initializeAutoModTables();
             this.isInitialized = true;
-            mainLogger.info('Database service initialized successfully');
-
+            mainLogger.info(
+                'Database service initialized successfully',
+            );
         } catch (error) {
             this.isInitialized = false;
-            mainLogger.error('Failed to initialize database service:', error);
+            mainLogger.error(
+                'Failed to initialize database service:',
+                error,
+            );
             throw error;
         }
     }
@@ -297,7 +361,10 @@ export class DatabaseService {
 
             mainLogger.debug('Database tables setup completed');
         } catch (error) {
-            mainLogger.error('Error setting up database tables:', error);
+            mainLogger.error(
+                'Error setting up database tables:',
+                error,
+            );
             throw error;
         }
     }
@@ -314,11 +381,11 @@ export class DatabaseService {
 
             for (const row of result.rows) {
                 const serverId = row.server_id as string;
-                
+
                 // Create default AutoMod config
                 const defaultConfig = {
                     automod: this.getDefaultAutoModConfig(),
-                    version: 1  // Add version for future migrations
+                    version: 1, // Add version for future migrations
                 };
 
                 // Insert into server_configs
@@ -327,17 +394,24 @@ export class DatabaseService {
                         INSERT INTO server_configs (server_id, config)
                         VALUES (?, ?)
                     `,
-                    args: [serverId, JSON.stringify(defaultConfig)]
+                    args: [serverId, JSON.stringify(defaultConfig)],
                 });
 
-                mainLogger.info(`Migrated configuration for server: ${serverId}`);
+                mainLogger.info(
+                    `Migrated configuration for server: ${serverId}`,
+                );
             }
 
             if (result.rows.length > 0) {
-                mainLogger.info(`Successfully migrated ${result.rows.length} server configurations`);
+                mainLogger.info(
+                    `Successfully migrated ${result.rows.length} server configurations`,
+                );
             }
         } catch (error) {
-            mainLogger.error('Error during configuration migration:', error);
+            mainLogger.error(
+                'Error during configuration migration:',
+                error,
+            );
             // Don't throw error to allow setup to continue
         }
     }
@@ -353,22 +427,28 @@ export class DatabaseService {
         return await this.client.transaction();
     }
 
-    public async commitTransaction(transaction: Transaction): Promise<void> {
+    public async commitTransaction(
+        transaction: Transaction,
+    ): Promise<void> {
         this.checkInitialized();
         await transaction.commit();
     }
 
-    public async rollbackTransaction(transaction: Transaction): Promise<void> {
+    public async rollbackTransaction(
+        transaction: Transaction,
+    ): Promise<void> {
         this.checkInitialized();
         await transaction.rollback();
     }
 
-    public async getUserEconomy(userId: string): Promise<UserEconomy> {
+    public async getUserEconomy(
+        userId: string,
+    ): Promise<UserEconomy> {
         this.checkInitialized();
         try {
             const result = await this.client.execute({
                 sql: this.preparedStatements.getUserEconomy,
-                args: [userId]
+                args: [userId],
             });
 
             if (!result.rows[0]) {
@@ -381,7 +461,7 @@ export class DatabaseService {
                     lastWork: null,
                     workStreak: 0,
                     inventory: [],
-                    total: 0
+                    total: 0,
                 };
 
                 await this.client.execute({
@@ -395,8 +475,8 @@ export class DatabaseService {
                         defaultEconomy.bank,
                         defaultEconomy.workStreak,
                         null,
-                        null
-                    ]
+                        null,
+                    ],
                 });
 
                 return defaultEconomy;
@@ -407,21 +487,33 @@ export class DatabaseService {
                 user_id: row.user_id as string,
                 balance: Number(row.balance),
                 bank: Number(row.bank),
-                lastDaily: row.last_daily ? new Date(String(row.last_daily)) : null,
-                lastWork: row.last_work ? new Date(String(row.last_work)) : null,
+                lastDaily: row.last_daily
+                    ? new Date(String(row.last_daily))
+                    : null,
+                lastWork: row.last_work
+                    ? new Date(String(row.last_work))
+                    : null,
                 workStreak: Number(row.work_streak || 0),
-                inventory: (row.inventory as string || "").split(",").filter(Boolean),
-                total: Number(row.balance) + Number(row.bank)
+                inventory: ((row.inventory as string) || '')
+                    .split(',')
+                    .filter(Boolean),
+                total: Number(row.balance) + Number(row.bank),
             };
         } catch (error) {
-            mainLogger.error(`Error getting user economy for ${userId}:`, error);
+            mainLogger.error(
+                `Error getting user economy for ${userId}:`,
+                error,
+            );
             throw error;
         }
     }
 
-    public async updateUserEconomy(userId: string, economy: UserEconomy): Promise<void> {
+    public async updateUserEconomy(
+        userId: string,
+        economy: UserEconomy,
+    ): Promise<void> {
         this.checkInitialized();
-        
+
         const operation = async () => {
             await this.client.execute({
                 sql: this.preparedStatements.updateUserEconomy,
@@ -433,8 +525,8 @@ export class DatabaseService {
                     economy.lastWork,
                     economy.workStreak,
                     JSON.stringify(economy.inventory),
-                    economy.total
-                ]
+                    economy.total,
+                ],
             });
         };
 
@@ -442,7 +534,10 @@ export class DatabaseService {
         this.scheduleBatch(`economy:${userId}`, operation);
     }
 
-    public async getLeaderboard(page: number = 1, perPage: number = 10): Promise<UserEconomy[]> {
+    public async getLeaderboard(
+        page = 1,
+        perPage = 10,
+    ): Promise<UserEconomy[]> {
         this.checkInitialized();
         try {
             const offset = (page - 1) * perPage;
@@ -450,117 +545,276 @@ export class DatabaseService {
                 sql: `SELECT * FROM economy 
                       ORDER BY (balance + bank) DESC 
                       LIMIT ? OFFSET ?`,
-                args: [perPage, offset]
+                args: [perPage, offset],
             });
 
-            return result.rows.map(row => ({
+            return result.rows.map((row) => ({
                 user_id: row.user_id as string,
                 balance: Number(row.balance),
                 bank: Number(row.bank),
-                lastDaily: row.last_daily ? new Date(String(row.last_daily)) : null,
-                lastWork: row.last_work ? new Date(String(row.last_work)) : null,
+                lastDaily: row.last_daily
+                    ? new Date(String(row.last_daily))
+                    : null,
+                lastWork: row.last_work
+                    ? new Date(String(row.last_work))
+                    : null,
                 workStreak: Number(row.work_streak || 0),
-                inventory: (row.inventory as string || "").split(",").filter(Boolean),
-                total: Number(row.balance) + Number(row.bank)
+                inventory: ((row.inventory as string) || '')
+                    .split(',')
+                    .filter(Boolean),
+                total: Number(row.balance) + Number(row.bank),
             }));
         } catch (error) {
-            mainLogger.error("Error getting leaderboard:", error);
+            mainLogger.error('Error getting leaderboard:', error);
             throw error;
         }
     }
 
-    public async getServerConfig(serverId: string): Promise<IConfiguration> {
+    public async getServerConfig(
+        serverId: string,
+    ): Promise<IConfiguration> {
         this.checkInitialized();
         try {
             // Check cache first
             const cached = this.configCache.get(serverId);
-            if (cached && Date.now() - cached.timestamp < this.CACHE_TTL) {
+            if (
+                cached &&
+                Date.now() - cached.timestamp < this.CACHE_TTL
+            ) {
                 return cached.data;
             }
 
             // First check server_configs table
             const serverConfigResult = await this.client.execute({
                 sql: this.preparedStatements.getServerConfig,
-                args: [serverId]
+                args: [serverId],
             });
 
             if (serverConfigResult.rows[0]) {
                 // Server has a config in server_configs
-                let config;
+                let config: Record<string, unknown>;
                 try {
-                    const configStr = serverConfigResult.rows[0].config as string;
-                    config = configStr ? JSON.parse(configStr) : {};
+                    const configStr = serverConfigResult.rows[0]
+                        .config as string;
+                    config = configStr
+                        ? (JSON.parse(configStr) as Record<
+                              string,
+                              unknown
+                          >)
+                        : {};
                 } catch (parseError) {
-                    this.logger.error(`Error parsing config for server ${serverId}:`, parseError);
+                    this.logger.error(
+                        `Error parsing config for server ${serverId}:`,
+                        parseError,
+                    );
                     config = {};
                 }
-                
+
                 // Ensure all required properties exist with default values
+                const typedConfig = config as Record<string, unknown>;
+                const bot = (typedConfig.bot ?? {}) as Record<
+                    string,
+                    unknown
+                >;
+                const commands = (typedConfig.commands ??
+                    {}) as Record<string, unknown>;
+                const features = (typedConfig.features ??
+                    {}) as Record<string, unknown>;
+                const featuresExp = (features.experiments ??
+                    {}) as Record<string, unknown>;
+                const security = (typedConfig.security ??
+                    {}) as Record<string, unknown>;
+                const automod = (typedConfig.automod ?? {}) as Record<
+                    string,
+                    unknown
+                >;
+                const automodFilters = (automod.filters ??
+                    {}) as Record<string, unknown>;
+                const automodThresholds = (automod.thresholds ??
+                    {}) as Record<string, unknown>;
+                const automodActions = (automod.actions ??
+                    {}) as Record<string, unknown>;
+                const automodWhitelist = (automod.whitelist ??
+                    {}) as Record<string, unknown>;
+
                 const validatedConfig: IConfiguration = {
-                    prefix: config.prefix ?? "s?",
-                    welcomeChannel: config.welcomeChannel ?? null,
-                    logChannel: config.logChannel ?? null,
+                    prefix:
+                        (typedConfig.prefix as unknown as
+                            | string
+                            | undefined) ?? 's?',
+                    welcomeChannel:
+                        (typedConfig.welcomeChannel as unknown as
+                            | string
+                            | null
+                            | undefined) ?? null,
+                    logChannel:
+                        (typedConfig.logChannel as unknown as
+                            | string
+                            | null
+                            | undefined) ?? null,
                     bot: {
-                        name: config.bot?.name ?? "Silk",
-                        status: config.bot?.status ?? "online",
-                        prefix: config.bot?.prefix ?? "s?",
-                        defaultCooldown: config.bot?.defaultCooldown ?? 3000,
-                        owners: Array.isArray(config.bot?.owners) ? config.bot.owners : []
+                        name:
+                            (bot.name as string | undefined) ??
+                            'Silk',
+                        status:
+                            (bot.status as string | undefined) ??
+                            'online',
+                        prefix:
+                            (bot.prefix as string | undefined) ??
+                            's?',
+                        defaultCooldown:
+                            (bot.defaultCooldown as
+                                | number
+                                | undefined) ?? 3000,
+                        owners: Array.isArray(bot.owners)
+                            ? (bot.owners as string[])
+                            : [],
                     },
                     commands: {
-                        enabled: config.commands?.enabled ?? true,
-                        disabled: Array.isArray(config.commands?.disabled) ? config.commands.disabled : [],
-                        dangerous: Array.isArray(config.commands?.dangerous) ? config.commands.dangerous : []
+                        enabled:
+                            (commands.enabled as
+                                | boolean
+                                | undefined) ?? true,
+                        disabled: Array.isArray(commands.disabled)
+                            ? (commands.disabled as string[])
+                            : [],
+                        dangerous: Array.isArray(commands.dangerous)
+                            ? (commands.dangerous as string[])
+                            : [],
                     },
                     features: {
-                        welcome: config.features?.welcome ?? false,
-                        logging: config.features?.logging ?? false,
-                        automod: config.features?.automod ?? true,
+                        welcome:
+                            (features.welcome as
+                                | boolean
+                                | undefined) ?? false,
+                        logging:
+                            (features.logging as
+                                | boolean
+                                | undefined) ?? false,
+                        automod:
+                            (features.automod as
+                                | boolean
+                                | undefined) ?? true,
                         experiments: {
-                            moderation: config.features?.experiments?.moderation ?? false,
-                            economy: config.features?.experiments?.economy ?? false
-                        }
+                            moderation:
+                                (featuresExp.moderation as
+                                    | boolean
+                                    | undefined) ?? false,
+                            economy:
+                                (featuresExp.economy as
+                                    | boolean
+                                    | undefined) ?? false,
+                        },
                     },
                     security: {
-                        antiSpam: config.security?.antiSpam ?? true,
-                        maxMentions: config.security?.maxMentions ?? 5,
-                        maxLines: config.security?.maxLines ?? 10,
-                        blockedUsers: Array.isArray(config.security?.blockedUsers) ? config.security.blockedUsers : [],
-                        allowedServers: Array.isArray(config.security?.allowedServers) ? config.security.allowedServers : []
+                        antiSpam:
+                            (security.antiSpam as
+                                | boolean
+                                | undefined) ?? true,
+                        maxMentions:
+                            (security.maxMentions as
+                                | number
+                                | undefined) ?? 5,
+                        maxLines:
+                            (security.maxLines as
+                                | number
+                                | undefined) ?? 10,
+                        blockedUsers: Array.isArray(
+                            security.blockedUsers,
+                        )
+                            ? (security.blockedUsers as string[])
+                            : [],
+                        allowedServers: Array.isArray(
+                            security.allowedServers,
+                        )
+                            ? (security.allowedServers as string[])
+                            : [],
                     },
                     automod: {
-                        enabled: config.automod?.enabled ?? false,
+                        enabled:
+                            (automod.enabled as
+                                | boolean
+                                | undefined) ?? false,
                         filters: {
-                            spam: config.automod?.filters?.spam ?? true,
-                            invites: config.automod?.filters?.invites ?? true,
-                            links: config.automod?.filters?.links ?? true,
-                            mentions: config.automod?.filters?.mentions ?? true,
-                            caps: config.automod?.filters?.caps ?? true
+                            spam:
+                                (automodFilters.spam as
+                                    | boolean
+                                    | undefined) ?? true,
+                            invites:
+                                (automodFilters.invites as
+                                    | boolean
+                                    | undefined) ?? true,
+                            links:
+                                (automodFilters.links as
+                                    | boolean
+                                    | undefined) ?? true,
+                            mentions:
+                                (automodFilters.mentions as
+                                    | boolean
+                                    | undefined) ?? true,
+                            caps:
+                                (automodFilters.caps as
+                                    | boolean
+                                    | undefined) ?? true,
                         },
                         thresholds: {
-                            maxMentions: config.automod?.thresholds?.maxMentions ?? 5,
-                            maxCaps: config.automod?.thresholds?.maxCaps ?? 70,
-                            messageBurst: config.automod?.thresholds?.messageBurst ?? 5
+                            maxMentions:
+                                (automodThresholds.maxMentions as
+                                    | number
+                                    | undefined) ?? 5,
+                            maxCaps:
+                                (automodThresholds.maxCaps as
+                                    | number
+                                    | undefined) ?? 70,
+                            messageBurst:
+                                (automodThresholds.messageBurst as
+                                    | number
+                                    | undefined) ?? 5,
                         },
                         actions: {
-                            warn: config.automod?.actions?.warn ?? true,
-                            delete: config.automod?.actions?.delete ?? true,
-                            timeout: config.automod?.actions?.timeout ?? 5
+                            warn:
+                                (automodActions.warn as
+                                    | boolean
+                                    | undefined) ?? true,
+                            delete:
+                                (automodActions.delete as
+                                    | boolean
+                                    | undefined) ?? true,
+                            timeout:
+                                (automodActions.timeout as
+                                    | number
+                                    | undefined) ?? 5,
                         },
                         whitelist: {
-                            users: Array.isArray(config.automod?.whitelist?.users) ? config.automod.whitelist.users : [],
-                            roles: Array.isArray(config.automod?.whitelist?.roles) ? config.automod.whitelist.roles : [],
-                            channels: Array.isArray(config.automod?.whitelist?.channels) ? config.automod.whitelist.channels : [],
-                            links: Array.isArray(config.automod?.whitelist?.links) ? config.automod.whitelist.links : []
-                        }
-                    }
+                            users: Array.isArray(
+                                automodWhitelist.users,
+                            )
+                                ? (automodWhitelist.users as string[])
+                                : [],
+                            roles: Array.isArray(
+                                automodWhitelist.roles,
+                            )
+                                ? (automodWhitelist.roles as string[])
+                                : [],
+                            channels: Array.isArray(
+                                automodWhitelist.channels,
+                            )
+                                ? (automodWhitelist.channels as string[])
+                                : [],
+                            links: Array.isArray(
+                                automodWhitelist.links,
+                            )
+                                ? (automodWhitelist.links as string[])
+                                : [],
+                        },
+                    },
                 };
 
                 // Cache the validated config
                 this.configCache.set(serverId, {
                     data: validatedConfig,
                     timestamp: Date.now(),
-                    dirty: false
+                    dirty: false,
                 });
 
                 return validatedConfig;
@@ -569,28 +823,33 @@ export class DatabaseService {
             // If no configuration exists, create a new one
             return await this.createDefaultConfig(serverId);
         } catch (error) {
-            mainLogger.error(`Error getting server config for ${serverId}:`, error);
+            mainLogger.error(
+                `Error getting server config for ${serverId}:`,
+                error,
+            );
             throw error;
         }
     }
 
-    public async createDefaultConfig(serverId: string): Promise<IConfiguration> {
+    public async createDefaultConfig(
+        serverId: string,
+    ): Promise<IConfiguration> {
         this.checkInitialized();
         const defaultConfig: IConfiguration = {
-            prefix: "s?",
+            prefix: 's?',
             welcomeChannel: null,
             logChannel: null,
             bot: {
-                name: "Silk",
-                status: "online",
-                prefix: "s?",
+                name: 'Silk',
+                status: 'online',
+                prefix: 's?',
                 defaultCooldown: 3000,
-                owners: []
+                owners: [],
             },
             commands: {
                 enabled: true,
                 disabled: [],
-                dangerous: []
+                dangerous: [],
             },
             features: {
                 welcome: false,
@@ -598,15 +857,15 @@ export class DatabaseService {
                 automod: true,
                 experiments: {
                     moderation: false,
-                    economy: false
-                }
+                    economy: false,
+                },
             },
             security: {
                 antiSpam: true,
                 maxMentions: 5,
                 maxLines: 10,
                 blockedUsers: [],
-                allowedServers: []
+                allowedServers: [],
             },
             automod: {
                 enabled: true,
@@ -615,25 +874,25 @@ export class DatabaseService {
                     invites: true,
                     links: true,
                     mentions: true,
-                    caps: true
+                    caps: true,
                 },
                 thresholds: {
                     maxMentions: 5,
                     maxCaps: 70,
-                    messageBurst: 5
+                    messageBurst: 5,
                 },
                 actions: {
                     warn: true,
                     delete: true,
-                    timeout: 5
+                    timeout: 5,
                 },
                 whitelist: {
                     users: [],
                     roles: [],
                     channels: [],
-                    links: []
-                }
-            }
+                    links: [],
+                },
+            },
         };
 
         try {
@@ -654,38 +913,52 @@ export class DatabaseService {
                     defaultConfig.features.welcome ? 1 : 0,
                     defaultConfig.features.logging ? 1 : 0,
                     defaultConfig.features.automod ? 1 : 0,
-                    defaultConfig.features.experiments.moderation ? 1 : 0,
-                    defaultConfig.features.experiments.economy ? 1 : 0,
+                    defaultConfig.features.experiments.moderation
+                        ? 1
+                        : 0,
+                    defaultConfig.features.experiments.economy
+                        ? 1
+                        : 0,
                     defaultConfig.security.antiSpam ? 1 : 0,
                     defaultConfig.security.maxMentions,
                     defaultConfig.security.maxLines,
-                    JSON.stringify(defaultConfig.security.blockedUsers),
-                    JSON.stringify(defaultConfig.security.allowedServers)
-                ]
+                    JSON.stringify(
+                        defaultConfig.security.blockedUsers,
+                    ),
+                    JSON.stringify(
+                        defaultConfig.security.allowedServers,
+                    ),
+                ],
             });
 
             // Cache the default config
             this.configCache.set(serverId, {
                 data: defaultConfig,
                 timestamp: Date.now(),
-                dirty: false
+                dirty: false,
             });
 
             return defaultConfig;
         } catch (error) {
-            this.logger.error(`Error creating default config for ${serverId}:`, error);
+            this.logger.error(
+                `Error creating default config for ${serverId}:`,
+                error,
+            );
             throw error;
         }
     }
 
-    public async updateServerConfig(serverId: string, config: IConfiguration): Promise<void> {
+    public async updateServerConfig(
+        serverId: string,
+        config: IConfiguration,
+    ): Promise<void> {
         this.checkInitialized();
 
         // Update cache
         this.configCache.set(serverId, {
             data: config,
             timestamp: Date.now(),
-            dirty: true
+            dirty: true,
         });
 
         const operation = async () => {
@@ -712,8 +985,8 @@ export class DatabaseService {
                     config.security.maxMentions,
                     config.security.maxLines,
                     JSON.stringify(config.security.blockedUsers),
-                    JSON.stringify(config.security.allowedServers)
-                ]
+                    JSON.stringify(config.security.allowedServers),
+                ],
             });
 
             // Update cache status after successful save
@@ -727,7 +1000,9 @@ export class DatabaseService {
         this.scheduleBatch(`config:${serverId}`, operation);
     }
 
-    public async getAutoModConfig(serverId?: string): Promise<AutoModConfig> {
+    public async getAutoModConfig(
+        serverId?: string,
+    ): Promise<AutoModConfig> {
         try {
             if (!serverId) {
                 return this.getDefaultAutoModConfig();
@@ -738,17 +1013,19 @@ export class DatabaseService {
 
             const result = await this.client.execute({
                 sql: 'SELECT config FROM server_configs WHERE server_id = ?',
-                args: [serverId]
+                args: [serverId],
             });
 
             if (!result.rows[0]) {
                 return this.getDefaultAutoModConfig();
             }
 
-            const serverConfig = JSON.parse(result.rows[0].config as string);
+            const serverConfig = JSON.parse(
+                result.rows[0].config as string,
+            );
             return {
                 ...this.getDefaultAutoModConfig(),
-                ...serverConfig.automod
+                ...serverConfig.automod,
             };
         } catch (error) {
             this.logger.error('Error getting automod config:', error);
@@ -764,49 +1041,53 @@ export class DatabaseService {
                 invites: true,
                 links: true,
                 mentions: true,
-                caps: true
+                caps: true,
             },
             thresholds: {
                 maxMentions: 5,
-                maxCaps: 70,    // percentage
+                maxCaps: 70, // percentage
                 maxLines: 10,
-                messageInterval: 5000,  // 5 seconds
-                messageBurst: 5        // messages per interval
+                messageInterval: 5000, // 5 seconds
+                messageBurst: 5, // messages per interval
             },
             actions: {
                 warn: true,
                 delete: true,
-                timeout: 5     // 5 minutes
+                timeout: 5, // 5 minutes
             },
             whitelist: {
                 users: [],
                 roles: [],
                 channels: [],
-                links: []
-            }
+                links: [],
+            },
         };
     }
 
-    private async ensureServerConfig(serverId: string): Promise<void> {
+    private async ensureServerConfig(
+        serverId: string,
+    ): Promise<void> {
         try {
             const result = await this.client.execute({
                 sql: 'SELECT 1 FROM server_configs WHERE server_id = ?',
-                args: [serverId]
+                args: [serverId],
             });
 
             if (!result.rows[0]) {
                 // Create new server config with default values
                 const defaultConfig = {
                     automod: this.getDefaultAutoModConfig(),
-                    version: 1
+                    version: 1,
                 };
 
                 await this.client.execute({
                     sql: 'INSERT INTO server_configs (server_id, config) VALUES (?, ?)',
-                    args: [serverId, JSON.stringify(defaultConfig)]
+                    args: [serverId, JSON.stringify(defaultConfig)],
                 });
 
-                this.logger.info(`Created new server config for: ${serverId}`);
+                this.logger.info(
+                    `Created new server config for: ${serverId}`,
+                );
             }
         } catch (error) {
             this.logger.error('Error ensuring server config:', error);
@@ -814,10 +1095,17 @@ export class DatabaseService {
         }
     }
 
-    public async recordAutoModViolation(violation: AutoModViolation): Promise<void> {
+    public async recordAutoModViolation(
+        violation: AutoModViolation,
+    ): Promise<void> {
         this.checkInitialized();
-        
-        if (!violation.type || !violation.userId || !violation.channelId || !violation.messageId) {
+
+        if (
+            !violation.type ||
+            !violation.userId ||
+            !violation.channelId ||
+            !violation.messageId
+        ) {
             throw new Error('Invalid violation data');
         }
 
@@ -830,13 +1118,16 @@ export class DatabaseService {
                     violation.channelId,
                     violation.messageId,
                     violation.timestamp || Date.now(),
-                    violation.details || ''
-                ]
+                    violation.details || '',
+                ],
             });
         };
 
         // Schedule the violation record as part of a batch
-        this.scheduleBatch(`violation:${violation.userId}`, operation);
+        this.scheduleBatch(
+            `violation:${violation.userId}`,
+            operation,
+        );
     }
 
     private async initializeAutoModTables(): Promise<void> {
@@ -855,16 +1146,24 @@ export class DatabaseService {
     }
 
     private setupCleanupInterval(): void {
-        this.cleanupInterval = setInterval(() => this.cleanup(), this.CLEANUP_INTERVAL);
+        this.cleanupInterval = setInterval(
+            () => this.cleanup(),
+            this.CLEANUP_INTERVAL,
+        );
     }
 
     private setupCleanupHandler(): void {
         const cleanup = async () => {
             try {
                 await this.destroy();
-                this.logger.debug('DatabaseService cleaned up successfully');
+                this.logger.debug(
+                    'DatabaseService cleaned up successfully',
+                );
             } catch (error) {
-                this.logger.error('Error during DatabaseService cleanup:', error);
+                this.logger.error(
+                    'Error during DatabaseService cleanup:',
+                    error,
+                );
             }
         };
 
@@ -872,11 +1171,17 @@ export class DatabaseService {
         process.on('SIGTERM', cleanup);
         process.on('exit', cleanup);
         process.on('uncaughtException', async (error) => {
-            this.logger.error('Uncaught exception in DatabaseService:', error);
+            this.logger.error(
+                'Uncaught exception in DatabaseService:',
+                error,
+            );
             await cleanup();
         });
         process.on('unhandledRejection', async (reason) => {
-            this.logger.error('Unhandled rejection in DatabaseService:', reason);
+            this.logger.error(
+                'Unhandled rejection in DatabaseService:',
+                reason,
+            );
             await cleanup();
         });
     }
@@ -885,17 +1190,27 @@ export class DatabaseService {
         try {
             // Skip cleanup if not initialized
             if (!this.isInitialized) {
-                this.logger.debug('Database service not initialized, skipping cleanup');
+                this.logger.debug(
+                    'Database service not initialized, skipping cleanup',
+                );
                 return;
             }
 
             // Process any remaining batch operations
-            for (const [key, operations] of this.batchOperations.entries()) {
+            for (const [
+                key,
+                operations,
+            ] of this.batchOperations.entries()) {
                 try {
-                    this.logger.debug(`Processing remaining batch operations for ${key}`);
+                    this.logger.debug(
+                        `Processing remaining batch operations for ${key}`,
+                    );
                     await this.processBatch(key, operations);
                 } catch (error) {
-                    this.logger.error(`Error processing batch for ${key}:`, error);
+                    this.logger.error(
+                        `Error processing batch for ${key}:`,
+                        error,
+                    );
                 }
             }
 
@@ -921,13 +1236,18 @@ export class DatabaseService {
             this.configCache.clear();
             this.batchOperations.clear();
             this.isInitialized = false;
-            
+
             // Reset the singleton instance
             DatabaseService.instance = undefined;
 
-            this.logger.info('Database service destroyed successfully');
+            this.logger.info(
+                'Database service destroyed successfully',
+            );
         } catch (error) {
-            this.logger.error('Error during database service cleanup:', error);
+            this.logger.error(
+                'Error during database service cleanup:',
+                error,
+            );
             throw error;
         }
     }
@@ -940,35 +1260,47 @@ export class DatabaseService {
             // Save all cached configurations
             for (const [serverId, cache] of this.configCache) {
                 try {
-                    promises.push(this.updateServerConfig(serverId, cache.data));
+                    promises.push(
+                        this.updateServerConfig(serverId, cache.data),
+                    );
                 } catch (error) {
-                    this.logger.error(`Error flushing config for server ${serverId}:`, error);
+                    this.logger.error(
+                        `Error flushing config for server ${serverId}:`,
+                        error,
+                    );
                 }
             }
 
             // Wait for all updates to complete
             await Promise.allSettled(promises);
-            this.logger.info(`Successfully flushed ${promises.length} cached configurations`);
-
+            this.logger.info(
+                `Successfully flushed ${promises.length} cached configurations`,
+            );
         } catch (error) {
             this.logger.error('Error during cache flush:', error);
             throw error;
         }
     }
 
-    public async executeQuery(sql: string, args: any[] = []): Promise<any> {
+    public async executeQuery(
+        sql: string,
+        args: (string | number | boolean | null)[] = [],
+    ): Promise<unknown> {
         this.checkInitialized();
         return await this.client.execute({
             sql,
-            args
+            args,
         });
     }
 
-    public async executeWrite(sql: string, args: any[] = []): Promise<void> {
+    public async executeWrite(
+        sql: string,
+        args: (string | number | boolean | null)[] = [],
+    ): Promise<void> {
         this.checkInitialized();
         await this.client.execute({
             sql,
-            args
+            args,
         });
     }
 }

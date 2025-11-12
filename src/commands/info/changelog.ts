@@ -1,5 +1,5 @@
-import { ICommand } from "../../types.js";
-import { Message } from "revolt.js";
+import type { ICommand } from "../../types.js";
+import type { Message } from "stoat.js";
 import { mainLogger } from "../../utils/Logger.js";
 import { VersionManager } from "../../managers/VersionManager.js";
 
@@ -10,7 +10,7 @@ const changelog: ICommand = {
     category: "Info",
     aliases: ["updates", "version"],
     flags: {
-        disabled: process.env.GEMINI_API_KEY == "" ? true : false
+        disabled: process.env.GEMINI_API_KEY === ""
     },
 
     async execute(msg: Message): Promise<void> {

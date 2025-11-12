@@ -1,4 +1,4 @@
-import { RateLimitConfig, RateLimitInfo } from "../types.js";
+import type { RateLimitConfig, RateLimitInfo } from "../types.js";
 import { commandLogger } from "../utils/Logger.js";
 
 export class RateLimitManager {

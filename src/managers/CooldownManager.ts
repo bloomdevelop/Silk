@@ -1,5 +1,5 @@
 import { mainLogger } from "../utils/Logger.js";
-import process from 'process';
+import process from 'node:process';
 
 export class CooldownManager {
     private cooldowns: Map<string, Map<string, number>>;

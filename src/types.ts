@@ -1,19 +1,26 @@
-import { Client, Message } from "revolt.js";
-import { Logger } from "./utils/Logger.js";
+import type { Client, Message } from 'stoat.js';
+import type { Logger } from './utils/Logger.js';
 
-export type Category = "Moderation" | "Economy" | "System" | "Utility" | "Fun" | "Info" | "Hidden";
+export type Category =
+    | 'Moderation'
+    | 'Economy'
+    | 'System'
+    | 'Utility'
+    | 'Fun'
+    | 'Info'
+    | 'Hidden';
 
 export interface RateLimitConfig {
-    usages: number;      // How many times the command can be used
-    duration: number;    // Time window in milliseconds
+    usages: number; // How many times the command can be used
+    duration: number; // Time window in milliseconds
     users?: Map<string, RateLimitInfo>; // Track user rate limits
-    global?: boolean;    // Whether this limit applies globally
+    global?: boolean; // Whether this limit applies globally
 }
 
 export interface RateLimitInfo {
-    usages: number;      // Current number of uses
-    resetTime: number;   // When the rate limit resets
-    lastUsed?: number;   // Last time the command was used
+    usages: number; // Current number of uses
+    resetTime: number; // When the rate limit resets
+    lastUsed?: number; // Last time the command was used
 }
 
 export interface ICommand {
@@ -44,7 +51,7 @@ export interface ICommand {
         message: Message,
         args: string[],
         client: Client,
-    ): Promise<any>;
+    ): Promise<void>;
 }
 
 export interface IConfiguration {
@@ -108,8 +115,7 @@ export interface IConfiguration {
 }
 
 export type Events = {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    error(error: any): void;
+    error(error: Error): void;
 
     connected(): void;
     connecting(): void;
@@ -118,7 +124,7 @@ export type Events = {
     logout(): void;
 
     messageCreate(message: Message): void;
-}
+};
 
 export interface UserEconomy {
     balance: number;
@@ -136,7 +142,7 @@ export interface ShopItem {
     name: string;
     description: string;
     price: number;
-    type: "collectable" | "usable" | "rare";
+    type: 'collectable' | 'usable' | 'rare';
     emoji?: string;
 }
 
@@ -169,12 +175,12 @@ export interface AutoModConfig {
         maxCaps: number;
         maxLines: number;
         messageInterval: number; // ms between messages
-        messageBurst: number;    // max messages in interval
+        messageBurst: number; // max messages in interval
     };
     actions: {
         warn: boolean;
         delete: boolean;
-        timeout?: number;       // timeout duration in minutes
+        timeout?: number; // timeout duration in minutes
     };
     whitelist: {
         users: string[];

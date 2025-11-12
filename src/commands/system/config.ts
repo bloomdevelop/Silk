@@ -1,7 +1,7 @@
 import { ICommand } from "../../types.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
 import { mainLogger } from "../../utils/Logger.js";
-import { Message } from "revolt.js";
+import { Message } from "stoat.js";
 import { IConfiguration } from "../../types.js";
 
 const ConfigCommand: ICommand = {

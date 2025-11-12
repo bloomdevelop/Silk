@@ -1,4 +1,4 @@
-import { Message } from "revolt.js";
+import { Message } from "stoat.js";
 import { ICommand } from "../../types.js";
 import { BoxFormatter } from "../../utils/BoxFormatter.js";
 import { formatDuration } from "../../utils/TimeUtils.js";

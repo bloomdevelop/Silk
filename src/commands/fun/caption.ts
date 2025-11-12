@@ -1,8 +1,8 @@
-import { Message } from "revolt.js";
-import { ICommand } from "../../types.js";
+import type { Message } from "stoat.js";
+import type { ICommand } from "../../types.js";
 import sharp from "sharp";
 import { createCanvas, loadImage } from "canvas";
-import { AutumnService } from "../../services/AutumnService.js";
+import { uploadFile } from "../../services/AutumnService.js";
 
 const calculateFontSize = (text: string, width: number, height: number): number => {
     // Start with a base size that's proportional to image dimensions
@@ -43,7 +43,7 @@ const command: ICommand = {
 
         try {
             // Download the image using the autumn URL
-            const response = await fetch(`https://autumn.revolt.chat/attachments/${attachment._id}`);
+            const response = await fetch(`https://cdn.stoatusercontent.com/attachments/${attachment.id}`);
             if (!response.ok) {
                 throw new Error(`Failed to download image: ${response.status} ${response.statusText}`);
             }
@@ -80,7 +80,7 @@ const command: ICommand = {
             const outputBuffer = canvas.toBuffer();
 
             // Upload to Autumn
-            const fileId = await AutumnService.uploadFile("attachments", outputBuffer, "caption.png");
+            const fileId = await uploadFile("attachments", outputBuffer, "caption.png");
 
             // Reply with the captioned image
             await message.reply({
@@ -94,7 +94,7 @@ const command: ICommand = {
 
         } catch (error) {
             console.error("Error in caption command:", error);
-            await message.reply("Sorry, there was an error processing your image! " + (error as Error).message);
+            await message.reply(`Sorry, there was an error processing your image! ${(error as Error).message}`);
         }
     }
 };

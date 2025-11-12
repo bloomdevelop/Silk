@@ -1,7 +1,7 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import { Logger } from "../../utils/Logger.js";
-import { AutumnService } from "../../services/AutumnService.js";
-import { Message } from "revolt.js";
+import { uploadFile } from "../../services/AutumnService.js";
+import type { Message } from "stoat.js";
 
 interface BunnyApiResponse {
     id: string;
@@ -71,7 +71,7 @@ const bunny: ICommand = {
             const imageBlob = await imageResponse.blob();
 
             // Upload to Autumn with proper filename and content type
-            const fileId = await AutumnService.uploadFile(
+            const fileId = await uploadFile(
                 'attachments',
                 imageBlob,
                 `bunny_${data.id}${imageUrl.endsWith('.gif') ? '.gif' : '.jpg'}`
@@ -80,7 +80,7 @@ const bunny: ICommand = {
             // Edit the loading message with the bunny image
             return loadingMsg.edit({
                 embeds: [{
-                    title: `🐰 Random Bunny`,
+                    title: "🐰 Random Bunny",
                     description: [
                         "Here's your random bunny picture!",
                         `Original Bunny ID: \`${data.id}\``,
