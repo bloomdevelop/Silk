@@ -1,4 +1,4 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 
 const programming_quotes: ICommand = {
     name: "programming_quotes",
@@ -9,7 +9,7 @@ const programming_quotes: ICommand = {
     aliases: ["p_quote"],
     async execute(msg) {
         await fetch(
-            `https://programming-quotesapi.vercel.app/api/random`,
+            "https://programming-quotesapi.vercel.app/api/random",
         )
             .then((res) => res.json())
             .then((data) => {

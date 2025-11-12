@@ -1,4 +1,4 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import os from "node:os";
 import { version as nodeVersion } from "node:process";
 import { fileURLToPath } from "node:url";
@@ -71,7 +71,7 @@ const about: ICommand = {
                         `**OS**: ${systemInfo.os}`,
                         `**CPU**: ${systemInfo.cpu}`,
                         `**Cores**: ${systemInfo.cores}`,
-                        `**Memory**:`,
+                        "**Memory**:",
                         `• Total: ${systemInfo.memory.total}`,
                         `• Used: ${systemInfo.memory.used}`,
                         `• Free: ${systemInfo.memory.free}`,

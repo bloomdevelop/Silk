@@ -1,5 +1,5 @@
-import { ICommand } from "../../types.js";
-import { spawnSync, SpawnSyncOptions } from "node:child_process";
+import type { ICommand } from "../../types.js";
+import { spawnSync, type SpawnSyncOptions } from "node:child_process";
 import { commandLogger } from "../../utils/Logger.js";
 
 const MAX_OUTPUT_LENGTH = 1900; // Maximum length for message content

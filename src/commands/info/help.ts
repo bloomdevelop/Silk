@@ -132,7 +132,7 @@ const help: ICommand = {
     aliases: ["commands", "h"],
     logger: Logger.getInstance("help"),
 
-    async execute(msg: Message, args: string[]): Promise<void> {
+    async execute(msg, args) {
         try {
             const bot = Bot.getInstance();
             const commands = Array.from(bot.getCommandManager().getAllCommands().values());
@@ -144,7 +144,6 @@ const help: ICommand = {
 
             const commandName = args[0].toLowerCase();
             await showCommandDetails(msg, commandName, commands);
-
         } catch (error) {
             this.logger?.error("Error executing help command:", error);
             await msg.reply({

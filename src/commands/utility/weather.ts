@@ -1,6 +1,6 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import { Logger } from "../../utils/Logger.js";
-import { Message } from "stoat.js";
+import type { Message } from "stoat.js";
 
 interface WeatherResponse {
     location: {
@@ -30,7 +30,7 @@ const weather: ICommand = {
     aliases: ["forecast"],
     logger: Logger.getInstance("weather"),
     flags: {
-        disabled: process.env.WEATHERAPI_KEY == "" ? true : false
+        disabled: process.env.WEATHERAPI_KEY === ""
     },
     rateLimit: {
         usages: 5,

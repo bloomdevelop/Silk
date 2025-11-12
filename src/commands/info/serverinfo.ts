@@ -1,6 +1,6 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import { Logger } from "../../utils/Logger.js";
-import { Message } from "stoat.js";
+import type { Message } from "stoat.js";
 
 const serverinfo: ICommand = {
     name: "serverinfo",
@@ -25,6 +25,17 @@ const serverinfo: ICommand = {
         }
 
         try {
+            if (!server.owner) {
+                await msg.reply({
+                    embeds: [{
+                        title: "Error",
+                        description: "This server has no owner!",
+                        colour: "#ff0000"
+                    }]
+                });
+                return;
+            }
+
             const owner = await server.fetchMember(server.owner);
             const members = await server.fetchMembers();
             const memberCount = members.members.length;
@@ -45,7 +56,7 @@ const serverinfo: ICommand = {
                     description: [
                         `**Owner:** ${owner?.user?.username || 'Unknown'}`,
                         `**Created:** ${createdDate}`,
-                        `**Server ID:** \`${server._id}\``,
+                        `**Server ID:** \`${server.id}\``,
                         "",
                         "**Statistics:**",
                         `• Members: ${memberCount}`,
@@ -55,10 +66,10 @@ const serverinfo: ICommand = {
                         server.description ? `**Description:**\n${server.description}` : null,
                         "",
                         "**Features:**",
-                        `• NSFW: ${server.nsfw ? "Yes" : "No"}`,
+                        `• NSFW: ${server.mature ? "Yes" : "No"}`,
                         server.flags ? `• Flags: ${Object.keys(server.flags).join(", ")}` : null
                     ].filter(Boolean).join("\n"),
-                    media: server.icon?._id,
+                    media: server.icon?.id,
                     colour: "#00ff00"
                 }]
             });

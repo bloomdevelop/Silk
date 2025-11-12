@@ -1,4 +1,4 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
 
 const leaderboard: ICommand = {
@@ -10,10 +10,10 @@ const leaderboard: ICommand = {
 
     async execute(msg, args) {
         const db = DatabaseService.getInstance();
-        const page = args?.length ? parseInt(args[0]) : 1;
+        const page = args?.length ? Number.parseInt(args[0]) : 1;
         const perPage = 10;
 
-        if (isNaN(page) || page < 1) {
+        if (Number.isNaN(page) || page < 1) {
             return msg.reply({
                 embeds: [{
                     title: "Error",

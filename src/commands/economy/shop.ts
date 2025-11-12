@@ -1,4 +1,4 @@
-import { ICommand, ShopItem } from "../../types.js";
+import type { ICommand, ShopItem } from "../../types.js";
 
 const shopItems: ShopItem[] = [
     {

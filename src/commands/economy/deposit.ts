@@ -1,4 +1,4 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
 
 const deposit: ICommand = {
@@ -20,7 +20,7 @@ const deposit: ICommand = {
         }
 
         const db = DatabaseService.getInstance();
-        const userId = msg.author?._id;
+        const userId = msg.author?.id;
         if (!userId) return;
 
         const economy = await db.getUserEconomy(userId);
@@ -29,8 +29,8 @@ const deposit: ICommand = {
         if (args[0].toLowerCase() === "all") {
             amount = economy.balance;
         } else {
-            amount = parseInt(args[0]);
-            if (isNaN(amount) || amount <= 0) {
+            amount = Number.parseInt(args[0]);
+            if (Number.isNaN(amount) || amount <= 0) {
                 return msg.reply({
                     embeds: [{
                         title: "Error",

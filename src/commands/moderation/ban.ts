@@ -1,4 +1,4 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import { commandLogger } from "../../utils/Logger.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
 
@@ -9,7 +9,7 @@ const ban: ICommand = {
     category: "Moderation",
     async execute(msg, args) {
         const db = DatabaseService.getInstance();
-        const serverId = msg.channel?.server?._id;
+        const serverId = msg.channel?.server?.id;
         
         // Check if moderation is enabled
         const config = await db.getServerConfig(serverId || '');
@@ -69,7 +69,7 @@ const ban: ICommand = {
             }
 
             const reason = args.slice(1).join(" ");
-            await (await targetMember).server?.banUser((await targetMember)._id.user, { reason});
+            await (await targetMember).server?.banUser((await targetMember).id.user, { reason});
 
             commandLogger.info(`${msg.author?.username} banned ${(await targetMember).user?.username} for: ${reason}`);
 

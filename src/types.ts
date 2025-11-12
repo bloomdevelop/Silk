@@ -44,14 +44,15 @@ export interface ICommand {
         disabled?: boolean;
         ownerOnly?: boolean;
         dangerous?: boolean;
+        hidden?: boolean;
     };
     validate?: (args: string[]) => boolean;
     logger?: Logger;
     execute(
         message: Message,
         args: string[],
-        client: Client,
-    ): Promise<void>;
+        client?: Client,
+    ): Promise<any>;
 }
 
 export interface IConfiguration {

@@ -1,4 +1,4 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
 
 const DAILY_AMOUNT = 1000;
@@ -17,7 +17,7 @@ const daily: ICommand = {
 
     async execute(msg) {
         const db = DatabaseService.getInstance();
-        const userId = msg.author?._id;
+        const userId = msg.author?.id;
 
         if (!userId) return;
 

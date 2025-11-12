@@ -40,6 +40,8 @@ export class DatabaseService {
     private readonly BATCH_DELAY = 100; // ms
     private readonly CACHE_TTL = 10 * 60 * 1000; // 10 minutes
     private readonly CLEANUP_INTERVAL = 5 * 60 * 1000; // 5 minutes
+    private readonly MAX_RETRIES = 3;
+    private readonly RETRY_DELAY = 500; // ms
     private logger: Logger;
 
     private constructor() {
@@ -118,6 +120,7 @@ export class DatabaseService {
     private async processBatch(
         key?: string,
         operations?: (() => Promise<void>)[],
+        retryCount = 0,
     ): Promise<void> {
         if (!this.isInitialized) {
             this.logger.debug(
@@ -156,6 +159,26 @@ export class DatabaseService {
                 throw error;
             }
         } catch (error) {
+            const errorMsg = String(error);
+            const isLockError =
+                errorMsg.includes('SQLITE_BUSY') ||
+                errorMsg.includes('database is locked');
+
+            if (
+                isLockError &&
+                retryCount < this.MAX_RETRIES
+            ) {
+                this.logger.debug(
+                    `Database locked, retrying batch for ${key} (attempt ${retryCount + 1}/${this.MAX_RETRIES})`,
+                );
+                // Wait before retrying
+                await new Promise((resolve) =>
+                    setTimeout(resolve, this.RETRY_DELAY),
+                );
+                // Retry the batch
+                return this.processBatch(key, operations, retryCount + 1);
+            }
+
             this.logger.error(
                 `Error processing batch for ${key}:`,
                 error,
@@ -292,6 +315,15 @@ export class DatabaseService {
             await this.client.execute('SELECT 1');
             mainLogger.info('Database connection established');
 
+            // Configure SQLite for better concurrency
+            if (!dbUrl) {
+                // Enable WAL mode and set busy timeout for local SQLite
+                await this.client.execute('PRAGMA journal_mode = WAL');
+                await this.client.execute('PRAGMA busy_timeout = 5000');
+                await this.client.execute('PRAGMA synchronous = NORMAL');
+                mainLogger.debug('SQLite WAL mode enabled');
+            }
+
             // Prepare statements
             await this.prepareStatements();
 
@@ -356,6 +388,22 @@ export class DatabaseService {
                 )
             `);
 
+            // Create economy table for user economy data
+            await this.client.execute(`
+                CREATE TABLE IF NOT EXISTS economy (
+                    user_id TEXT PRIMARY KEY,
+                    balance INTEGER DEFAULT 0,
+                    bank INTEGER DEFAULT 0,
+                    last_daily INTEGER,
+                    last_work INTEGER,
+                    work_streak INTEGER DEFAULT 0,
+                    inventory TEXT DEFAULT '[]',
+                    total INTEGER DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
             // Migrate existing configurations to server_configs if needed
             await this.migrateConfigurations();
 
@@ -378,6 +426,10 @@ export class DatabaseService {
                 LEFT JOIN server_configs sc ON c.server_id = sc.server_id
                 WHERE sc.server_id IS NULL
             `);
+    
+            if (!result?.rows?.length) {
+                return;
+            }
 
             for (const row of result.rows) {
                 const serverId = row.server_id as string;
@@ -451,9 +503,9 @@ export class DatabaseService {
                 args: [userId],
             });
 
-            if (!result.rows[0]) {
-                // Create default economy for new user
-                const defaultEconomy: UserEconomy = {
+            if (!result?.rows?.[0]) {
+                 // Create default economy for new user
+                 const defaultEconomy: UserEconomy = {
                     user_id: userId,
                     balance: 0,
                     bank: 0,
@@ -483,6 +535,10 @@ export class DatabaseService {
             }
 
             const row = result.rows[0];
+            if (!row) {
+                throw new Error('Failed to retrieve user economy data');
+            }
+
             return {
                 user_id: row.user_id as string,
                 balance: Number(row.balance),
@@ -548,7 +604,7 @@ export class DatabaseService {
                 args: [perPage, offset],
             });
 
-            return result.rows.map((row) => ({
+            return (result.rows ?? []).map((row) => ({
                 user_id: row.user_id as string,
                 balance: Number(row.balance),
                 bank: Number(row.bank),
@@ -590,7 +646,7 @@ export class DatabaseService {
                 args: [serverId],
             });
 
-            if (serverConfigResult.rows[0]) {
+            if (serverConfigResult?.rows?.[0]) {
                 // Server has a config in server_configs
                 let config: Record<string, unknown>;
                 try {
@@ -1016,12 +1072,12 @@ export class DatabaseService {
                 args: [serverId],
             });
 
-            if (!result.rows[0]) {
+            if (!result?.rows?.[0]) {
                 return this.getDefaultAutoModConfig();
             }
 
             const serverConfig = JSON.parse(
-                result.rows[0].config as string,
+                (result.rows[0].config) as string,
             );
             return {
                 ...this.getDefaultAutoModConfig(),
@@ -1073,7 +1129,7 @@ export class DatabaseService {
                 args: [serverId],
             });
 
-            if (!result.rows[0]) {
+            if (!result?.rows?.[0]) {
                 // Create new server config with default values
                 const defaultConfig = {
                     automod: this.getDefaultAutoModConfig(),

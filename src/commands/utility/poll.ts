@@ -1,6 +1,6 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import { Logger } from "../../utils/Logger.js";
-import { Message } from "stoat.js";
+import type { Message } from "stoat.js";
 
 const OPTION_EMOJIS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
 const MAX_OPTIONS = 10;
@@ -53,7 +53,7 @@ const poll: ICommand = {
         // Create poll message
         const pollMessage = await msg.reply({
             embeds: [{
-                title: "📊 " + question,
+                title: `📊 ${question}`,
                 description: [
                     "**Options:**",
                     ...options.map((option, index) => 

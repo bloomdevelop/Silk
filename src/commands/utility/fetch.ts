@@ -1,4 +1,4 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import { commandLogger } from "../../utils/Logger.js";
 
 const isValidUrl = (urlString: string): boolean => {
@@ -36,7 +36,7 @@ const fetch: ICommand = {
         }
 
         let url = args[0];
-        const useHttps = args[1]?.toLowerCase() === "false" ? false : true;
+        const useHttps = args[1]?.toLowerCase() !=="false";
 
         // Add protocol if not specified
         if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -77,7 +77,7 @@ const fetch: ICommand = {
             // Truncate response if too long
             const maxLength = 1900; // Discord-like limit for safety
             const truncatedJson = formattedJson.length > maxLength 
-                ? formattedJson.slice(0, maxLength) + "\n... (truncated)"
+                ? `${formattedJson.slice(0, maxLength)}\n... (truncated)`
                 : formattedJson;
 
             return message.reply({

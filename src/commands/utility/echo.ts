@@ -1,5 +1,5 @@
-import { ICommand } from "../../types.js";
-import { Message } from "stoat.js";
+import type { ICommand } from "../../types.js";
+import type { Message } from "stoat.js";
 import { mainLogger } from "../../utils/Logger.js";
 
 const echo: ICommand = {
@@ -11,7 +11,7 @@ const echo: ICommand = {
 
     async execute(message: Message, args: string[]) {
         const startTime = Date.now();
-        const messageId = message._id;
+        const messageId = message.id;
         
         try {
             if (!args.length) {
@@ -25,7 +25,7 @@ const echo: ICommand = {
             }
 
             const content = args.join(" ");
-            mainLogger.debug(`Echo command execution:`, {
+            mainLogger.debug('Echo command execution:', {
                 messageId,
                 author: message.author?.username,
                 content,
@@ -38,7 +38,7 @@ const echo: ICommand = {
                     description: [
                         content,
                         "",
-                        `**Debug Info:**`,
+                        '**Debug Info:**',
                         `Message ID: \`${messageId}\``,
                         `Time: \`${Date.now() - startTime}ms\``
                     ].join('\n'),

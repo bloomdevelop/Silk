@@ -1,4 +1,4 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import { ErrorHandler } from "../../utils/ErrorHandler.js";
 import { commandLogger } from "../../utils/Logger.js";
 

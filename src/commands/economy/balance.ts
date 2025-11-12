@@ -1,5 +1,6 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
+import type { Message } from "stoat.js";
 
 const balance: ICommand = {
     name: "balance",
@@ -8,9 +9,9 @@ const balance: ICommand = {
     category: "Economy",
     aliases: ["bal", "money"],
     
-    async execute(msg, args) {
+    async execute(msg: Message, args: string[]) {
         const db = DatabaseService.getInstance();
-        const serverId = msg.channel?.server?._id;
+        const serverId = msg.channel?.server?.id;
         
         // Check if economy is enabled
         const config = await db.getServerConfig(serverId || '');
@@ -24,7 +25,7 @@ const balance: ICommand = {
             });
         }
 
-        const targetId = args[0]?.trim() || msg.author?._id;
+        const targetId = args[0]?.trim() || msg.author?.id;
         
         if (!targetId) {
             return msg.reply({
@@ -37,7 +38,7 @@ const balance: ICommand = {
         }
 
         const economy = await db.getUserEconomy(targetId);
-        const isOwnBalance = targetId === msg.author?._id;
+        const isOwnBalance = targetId === msg.author?.id;
 
         return msg.reply({
             embeds: [{

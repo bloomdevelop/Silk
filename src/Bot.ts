@@ -25,6 +25,17 @@ export class Bot {
         this.validateEnvironment();
 
         this.client = new Client();
+
+        // Add global error handler for the client
+        this.client.on('error', (error: Error) => {
+            mainLogger.error(
+                'Client error event received:',
+                error,
+            );
+            // Don't crash on stoat.js library errors
+            // Let ProcessManager handle graceful shutdown
+        });
+
         this.db = DatabaseService.getInstance();
         this.commandManager = CommandManager.getInstance(this.client);
         this.eventManager = new EventManager(

@@ -1,4 +1,4 @@
-import { ICommand } from "../../types.js";
+import type { ICommand } from "../../types.js";
 import { commandLogger } from "../../utils/Logger.js";
 import { DatabaseService } from "../../services/DatabaseService.js";
 
@@ -9,7 +9,7 @@ const kick: ICommand = {
     category: "Moderation",
     async execute(msg, args) {
         const db = DatabaseService.getInstance();
-        const serverId = msg.channel?.server?._id;
+        const serverId = msg.channel?.server?.id;
         
         // Check if moderation is enabled
         const config = await db.getServerConfig(serverId || '');

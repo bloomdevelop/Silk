@@ -70,7 +70,7 @@ export class EventManager {
             this.readyHandlerBound = this.readyHandler.bind(this);
 
             // Register event handlers
-            this.client.on('message', this.messageHandlerBound);
+            this.client.on('messageCreate', this.messageHandlerBound);
             this.client.on('ready', this.readyHandlerBound);
 
             this.isRegistered = true;
@@ -190,7 +190,7 @@ export class EventManager {
 
         if (this.messageHandlerBound) {
             this.client.removeListener(
-                'message',
+                'messageCreate',
                 this.messageHandlerBound,
             );
         }
