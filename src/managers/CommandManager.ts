@@ -1,11 +1,13 @@
 import type { Client, Message } from 'stoat.js';
 import type { ICommand } from '../types.js';
+import { Worker } from 'node:worker_threads';
 import { readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mainLogger } from '../utils/Logger.js';
 import { formatDuration, measureTime } from '../utils/TimeUtils.js';
 import { TaskQueue } from '../utils/TaskQueue.js';
+import { CommandCacheService } from '../services/CommandCacheService.js';
 
 interface CommandLoadResult {
     commands: number;
@@ -14,18 +16,33 @@ interface CommandLoadResult {
     category: string;
 }
 
+interface TaskResultWrapper {
+    id: string;
+    result?: CommandLoadResult;
+    error?: Error;
+    startTime: number;
+    endTime: number;
+    retries: number;
+    success: boolean;
+}
+
+interface CacheEntry {
+    command: ICommand;
+    timestamp: number;
+}
+
 export class CommandManager {
     private static instance: CommandManager;
     private client: Client;
     private commands: Map<string, ICommand>;
     private aliases: Map<string, string>;
-    private commandCache: Map<
-        string,
-        { command: ICommand; timestamp: number }
-    >;
+    private commandCache: Map<string, CacheEntry>;
     private logger = mainLogger;
     private taskQueue: TaskQueue;
     private readonly CACHE_TTL = 300000; // 5 minutes
+    private cacheCleanupInterval: NodeJS.Timeout | null = null;
+    private maxCacheSize = 500;
+    private cacheService: CommandCacheService | null = null;
 
     private constructor(client: Client) {
         if (!client) {
@@ -36,12 +53,11 @@ export class CommandManager {
         this.aliases = new Map();
         this.commandCache = new Map();
         this.taskQueue = new TaskQueue({
-            concurrency: 4, // Load up to 4 categories concurrently
-            defaultTimeout: 30000, // 30 second timeout per category
-            maxRetries: 2, // Retry failed loads twice
+            concurrency: 4,
+            defaultTimeout: 30000,
+            maxRetries: 2,
         });
 
-        // Handle task completion events
         this.taskQueue.on('taskCompleted', (result) => {
             const loadResult = result.result as CommandLoadResult;
             if (loadResult) {
@@ -59,6 +75,7 @@ export class CommandManager {
         });
 
         this.setupCleanupHandler();
+        this.startCacheCleanup();
     }
 
     static getInstance(client: Client): CommandManager {
@@ -68,6 +85,11 @@ export class CommandManager {
         return CommandManager.instance;
     }
 
+    async initializeCacheService(dataDir: string): Promise<void> {
+        this.cacheService = CommandCacheService.getInstance(dataDir);
+        await this.cacheService.initialize();
+    }
+
     async loadCommands(): Promise<void> {
         const startTime = Date.now();
 
@@ -75,84 +97,93 @@ export class CommandManager {
             const __dirname = dirname(fileURLToPath(import.meta.url));
             const categoriesDir = join(__dirname, '..', 'commands');
             const categories = readdirSync(categoriesDir);
+            let completedTasks = 0;
+            const totalTasks = categories.length;
 
-            // Create tasks for each category
-            const loadPromises = categories.map((category) => {
-                const categoryPath = join(categoriesDir, category);
-                // Convert src path to dist path for compiled files
-                const distPath = categoryPath.replace(
-                    '/src/',
-                    '/dist/',
+            // Queue all categories and wait for completion
+            await new Promise<void>((resolve, reject) => {
+                if (totalTasks === 0) {
+                    resolve();
+                    return;
+                }
+
+                const taskCompletedHandler = (
+                    taskResult: TaskResultWrapper,
+                ) => {
+                    completedTasks++;
+                    const loadResult = taskResult.result;
+                    if (loadResult) {
+                        this.logger.debug(
+                            `Category ${loadResult.category} loaded: ${loadResult.commands} commands in ${formatDuration(loadResult.time)}`,
+                        );
+                    }
+                    if (completedTasks >= totalTasks) {
+                        this.taskQueue.removeListener(
+                            'taskCompleted',
+                            taskCompletedHandler,
+                        );
+                        this.taskQueue.removeListener(
+                            'taskFailed',
+                            taskFailedHandler,
+                        );
+                        resolve();
+                    }
+                };
+
+                const taskFailedHandler = (
+                    taskResult: TaskResultWrapper,
+                ) => {
+                    this.taskQueue.removeListener(
+                        'taskCompleted',
+                        taskCompletedHandler,
+                    );
+                    this.taskQueue.removeListener(
+                        'taskFailed',
+                        taskFailedHandler,
+                    );
+                    this.logger.error(
+                        `Failed to load category after ${taskResult.retries} retries:`,
+                        taskResult.error,
+                    );
+                    reject(taskResult.error);
+                };
+
+                this.taskQueue.on(
+                    'taskCompleted',
+                    taskCompletedHandler,
                 );
+                this.taskQueue.on('taskFailed', taskFailedHandler);
 
-                return this.taskQueue.addTask({
-                    execute: async () => {
-                        const categoryStart = Date.now();
-                        // Only look for .js files in dist directory
-                        const commandFiles = readdirSync(
-                            distPath,
-                        ).filter((file) => file.endsWith('.js'));
-                        let loadedCount = 0;
-                        let failedCount = 0;
+                // Queue all category load tasks
+                for (const category of categories) {
+                    const categoryPath = join(
+                        categoriesDir,
+                        category,
+                    );
+                    const distPath = categoryPath.replace(
+                        '/src/',
+                        '/dist/',
+                    );
 
-                        for (const file of commandFiles) {
-                            try {
-                                const filePath = join(distPath, file);
-                                this.logger.debug(
-                                    `Loading command from: ${filePath}`,
-                                );
-
-                                const commandModule = await import(
-                                    filePath
-                                );
-                                const command: ICommand =
-                                    commandModule.default;
-
-                                if (!command.name) {
-                                    throw new Error(
-                                        `Command in ${file} has no name property`,
-                                    );
-                                }
-
-                                this.commands.set(
-                                    command.name,
-                                    command,
-                                );
-                                if (command.aliases) {
-                                    for (const alias of command.aliases) {
-                                        this.aliases.set(alias, command.name);
-                                    }
-                                }
-                                this.logger.debug(
-                                    `Successfully loaded command: ${command.name}`,
-                                );
-                                loadedCount++;
-                            } catch (error) {
-                                this.logger.error(
-                                    `Failed to load command from ${file}:`,
-                                    error,
-                                );
-                                failedCount++;
-                            }
-                        }
-
-                        return {
-                            commands: loadedCount,
-                            failed: failedCount,
-                            time: Date.now() - categoryStart,
-                            category,
-                        } as CommandLoadResult;
-                    },
-                    timeout: 60000, // 1 minute timeout per category
-                    retries: 2,
-                });
+                    this.taskQueue.addTask({
+                        execute: () =>
+                            this.loadCategoryWithWorker(
+                                distPath,
+                                category,
+                            ),
+                        priority: 2,
+                    });
+                }
             });
 
-            // Wait for all tasks to complete
-            await Promise.all(loadPromises);
+            this.logger.debug(
+                `All categories loaded. Total commands: ${this.commands.size}`,
+            );
 
-            // Clean up task results
-            this.taskQueue.clearAllTaskResults();
+            // Save cache after all commands are loaded
+            if (this.cacheService) {
+                await this.cacheService.saveCache(this.getCommands());
+            }
 
             const totalTime = Date.now() - startTime;
             this.logger.info(
@@ -164,6 +195,90 @@ export class CommandManager {
         }
     }
 
+    private loadCategoryWithWorker(
+        distPath: string,
+        category: string,
+    ): Promise<CommandLoadResult> {
+        return new Promise((resolve, reject) => {
+            const categoryStart = Date.now();
+
+            const worker = new Worker(
+                new URL(
+                    '../workers/commandLoader.js',
+                    import.meta.url,
+                ),
+            );
+
+            worker.on(
+                'message',
+                async (result: {
+                    commandFiles: string[];
+                    failed: number;
+                    time: number;
+                    category: string;
+                }) => {
+                    try {
+                        this.logger.debug(
+                            `Received worker result for ${result.category}: ${result.commandFiles?.length || 0} files`,
+                        );
+                        let loadedCount = 0;
+                        // Load commands from the provided file paths
+                        if (
+                            result.commandFiles &&
+                            Array.isArray(result.commandFiles)
+                        ) {
+                            for (const filePath of result.commandFiles) {
+                                const cmdResult =
+                                    await this.loadCommand(filePath);
+                                if (cmdResult) {
+                                    const cmd = cmdResult.command;
+                                    this.commands.set(cmd.name, cmd);
+                                    if (cmd.aliases) {
+                                        for (const alias of cmd.aliases) {
+                                            this.aliases.set(
+                                                alias,
+                                                cmd.name,
+                                            );
+                                        }
+                                    }
+                                    loadedCount++;
+                                }
+                            }
+                        }
+
+                        worker.terminate();
+                        resolve({
+                            commands: loadedCount,
+                            failed:
+                                (result.failed || 0) +
+                                (result.commandFiles.length -
+                                    loadedCount),
+                            time: Date.now() - categoryStart,
+                            category,
+                        });
+                    } catch (error) {
+                        worker.terminate();
+                        reject(error);
+                    }
+                },
+            );
+
+            worker.on('error', reject);
+            worker.on('exit', (code) => {
+                if (code !== 0) {
+                    reject(
+                        new Error(`Worker exited with code ${code}`),
+                    );
+                }
+            });
+
+            worker.postMessage({
+                categoryPath: distPath,
+                category,
+            });
+        });
+    }
+
     getCommand(name: string): ICommand | undefined {
         // Check cache first
         const cached = this.commandCache.get(name);
@@ -171,23 +286,45 @@ export class CommandManager {
             cached &&
             Date.now() - cached.timestamp < this.CACHE_TTL
         ) {
+            // Update timestamp for LRU
+            cached.timestamp = Date.now();
             return cached.command;
         }
 
-        // If not in cache or expired, look up command
+        // Look up command
         const command =
             this.commands.get(name) ||
             this.commands.get(this.aliases.get(name) || '');
 
         if (command) {
-            // Update cache
-            this.commandCache.set(name, {
-                command,
-                timestamp: Date.now(),
-            });
+            this.updateCache(name, command);
         }
 
         return command;
+    }
+
+    private updateCache(name: string, command: ICommand): void {
+        // Evict oldest entry if cache exceeds max size
+        if (this.commandCache.size >= this.maxCacheSize) {
+            let oldestKey: string | null = null;
+            let oldestTime = Date.now();
+
+            for (const [key, entry] of this.commandCache.entries()) {
+                if (entry.timestamp < oldestTime) {
+                    oldestTime = entry.timestamp;
+                    oldestKey = key;
+                }
+            }
+
+            if (oldestKey) {
+                this.commandCache.delete(oldestKey);
+            }
+        }
+
+        this.commandCache.set(name, {
+            command,
+            timestamp: Date.now(),
+        });
     }
 
     getAllCommands(): Map<string, ICommand> {
@@ -281,9 +418,12 @@ export class CommandManager {
         try {
             // Remove old command and its aliases
             this.commands.delete(command.name);
+            this.commandCache.delete(command.name);
+
             if (command.aliases) {
                 for (const alias of command.aliases) {
                     this.aliases.delete(alias);
+                    this.commandCache.delete(alias);
                 }
             }
 
@@ -302,6 +442,7 @@ export class CommandManager {
 
             const { command: newCommand } = result;
             this.commands.set(newCommand.name, newCommand);
+            this.updateCache(newCommand.name, newCommand);
 
             if (newCommand.aliases) {
                 for (const alias of newCommand.aliases) {
@@ -350,6 +491,26 @@ export class CommandManager {
         }
     }
 
+    private startCacheCleanup(): void {
+        this.cacheCleanupInterval = setInterval(() => {
+            const now = Date.now();
+            let evicted = 0;
+
+            for (const [key, entry] of this.commandCache.entries()) {
+                if (now - entry.timestamp > this.CACHE_TTL) {
+                    this.commandCache.delete(key);
+                    evicted++;
+                }
+            }
+
+            if (evicted > 0) {
+                this.logger.debug(
+                    `Cache cleanup: evicted ${evicted} expired entries`,
+                );
+            }
+        }, 60000); // Clean every minute
+    }
+
     private setupCleanupHandler(): void {
         const cleanup = async () => {
             try {
@@ -386,13 +547,19 @@ export class CommandManager {
 
     public async destroy(): Promise<void> {
         try {
-            // Clear all command caches
+            // Clear all caches and data structures
             this.commands.clear();
             this.aliases.clear();
             this.commandCache.clear();
 
+            // Stop cache cleanup interval
+            if (this.cacheCleanupInterval) {
+                clearInterval(this.cacheCleanupInterval);
+                this.cacheCleanupInterval = null;
+            }
+
             // Clean up task queue
-            await this.taskQueue.destroy();
+            this.taskQueue.destroy();
 
             // Remove all listeners
             process.removeAllListeners('SIGINT');

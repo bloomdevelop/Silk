@@ -98,6 +98,12 @@ export class Bot {
                 `Database initialized in ${formatDuration(dbTime)}`,
             );
 
+            // Initialize command cache service
+            const dataDir = this.db.getDataDir();
+            await this.commandManager.initializeCacheService(
+                dataDir,
+            );
+
             // Then initialize other components
             const cmdStart = measureTime();
             await this.commandManager.loadCommands();

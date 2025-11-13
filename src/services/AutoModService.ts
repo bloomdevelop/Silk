@@ -113,28 +113,22 @@ export class AutoModService {
             this.logger.info('Initializing AutoMod service');
             this.client = client;
             
-            // Wait for client to be ready
+            // If client is already ready, skip waiting
             if (!client.user) {
                 this.logger.debug('Waiting for client to be ready...');
-                await new Promise<void>((resolve) => {
-                    client.on('ready', () => {
-                        this.logger.debug('Client ready, continuing initialization');
-                        resolve();
-                    });
-                });
+                await Promise.race([
+                    new Promise<void>((resolve) => {
+                        client.once('ready', resolve);
+                    }),
+                    new Promise<void>((_, reject) =>
+                        setTimeout(() => reject(new Error(
+                            'Client ready timeout after 2s'
+                        )), 2000)
+                    )
+                ]);
             }
 
-            // Now we can safely access servers
-            const serverIds = Array.from(client.servers.keys()) as string[];
-            const servers = await Promise.all(
-                serverIds.map(async (serverId: string) => {
-                    const config = await this.db.getServerConfig(serverId);
-                    this.logger.debug(`Loaded AutoMod config for server: ${serverId}`);
-                    return { server_id: serverId, config };
-                })
-            );
-
-            this.logger.info(`AutoMod service initialized successfully for ${servers.length} servers`);
+            this.logger.debug('AutoMod service initialized');
         } catch (error) {
             this.logger.error('Failed to initialize AutoMod service:', error);
             throw error;

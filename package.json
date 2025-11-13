@@ -25,14 +25,16 @@
     "canvas": "^2.11.2",
     "chalk": "^5.3.0",
     "dotenv": "^16.4.5",
+    "msgpack5": "^6.0.2",
     "node-fetch": "^3.3.2",
-    "stoat.js": "7.3.4",
     "sharp": "^0.33.5",
+    "stoat.js": "7.3.4",
     "ulid": "^2.3.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
+    "@types/msgpack5": "^3.4.6",
     "@types/node": "^22.2.0",
     "nodemon": "^3.1.7",
     "rimraf": "^6.0.1",

@@ -58,6 +58,13 @@ export class DatabaseService {
         return DatabaseService.instance;
     }
 
+    getDataDir(): string {
+        const __dirname = dirname(
+            fileURLToPath(import.meta.url),
+        );
+        return join(__dirname, '..', '..', 'data');
+    }
+
     private async prepareStatements(): Promise<void> {
         this.preparedStatements = {
             getUserEconomy: 'SELECT * FROM economy WHERE user_id = ?',
